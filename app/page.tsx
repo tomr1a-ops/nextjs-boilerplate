@@ -14,7 +14,7 @@ export default function Home() {
       <h1 style={{ marginBottom: "20px" }}>IMA Studio Player</h1>
 
       <iframe
-        src="https://player.mux.com/EEtT1vz9FZ01DpH4iyByDjw5w102dhuV0o6EEp12eHMU"
+     src="https://player.mux.com/EEtT1vz9FZ01DpH4iyByDjwV5w102dhuV0o6EEp12eHMU"
         style={{
           width: "90%",
           maxWidth: "900px",
