@@ -9,20 +9,32 @@ type VideoItem = {
 
 export default function Home() {
   // ✅ Put ALL your videos here (Playback IDs from Mux)
-  const videos: VideoItem[] = useMemo(
-    () => [
-      {
-        title: "AL1V1",
-        id: "EEtT1vz9FZ01DpH4iyByDjwV5w102dhuVOo6EEp12eHMU",
-      },
-      // Add more like this:
-      // { title: "AL1V2", id: "PLAYBACK_ID_HERE" },
-      // { title: "AL1V3", id: "PLAYBACK_ID_HERE" },
-      // { title: "AL1V4", id: "PLAYBACK_ID_HERE" },
-      // { title: "AL1V5", id: "PLAYBACK_ID_HERE" },
-    ],
-    []
-  );
+ const videos: VideoItem[] = useMemo(
+  () => [
+    // LEVEL 1
+    { title: "AL1V1", id: "XlyabeYunw7OrO10bP01QSM4pPPqwGPhASIu8Lulk1U1A" },
+    { title: "AL1V2", id: "UuGE7dMyciCb4vbtn3so06V6Z7lJ600RsHrQ58C01Eb3o" },
+    { title: "AL1V3", id: "IZVvR002seW6tsZkFAs2z2iu00A5j8UJ02t4cpggrrL3TQ" },
+    { title: "AL1V4", id: "PYM6YfVI4tXPAmP5JQgmhNj6ZEs5nBRivUlLCDYayYo" },
+    { title: "AL1V5", id: "aB902FvqZX33uvBV8MG7hT4cNRYzm5xLjpHERI0083ZNE" },
+
+    // LEVEL 2
+    { title: "AL2V1", id: "tnfMtND397VBYgVKijP8S5LK2P01bCOnVhdT6o7vI6yg" },
+    { title: "AL2V2", id: "oFW1lBUiUFd02zqg4pfQxQe01jBzgan6xMVttTSeaIc7M" },
+    { title: "AL2V3", id: "TETzpPDFZA8EPkprxQVw5VLDsckFmgecPcSbwQeyXGQ" },
+    { title: "AL2V4", id: "pFeakCTI1j6PyitCF013Ny7rwjKztduZ9En02u2dTn0PQ" },
+    { title: "AL2V5", id: "ePjgmvyxk45hx02qZpZ0101EpnkmK5oXW7dnGD00k3Dd9c4" },
+
+    // LEVEL 3
+    { title: "AL3V1", id: "8k29rESyBBzz8soikjnaq6JDCRJ5LFBDsKGciRjhJE" },
+    { title: "AL3V2", id: "hD4YRxvkzJUeepPIMR7e011yy6UpCe11LgAiC9NmTXs4" },
+    { title: "AL3V3", id: "XNj1l02mFA01S9hfzS00bJ2OOaKhtHx89s79xjl3lG3ut00" },
+    { title: "AL3V4", id: "CWYp6R00rbQtVWNuXZ00cG01ycN00M7BxPke478G7SmwjDc" },
+    { title: "AL3V5", id: "HsFKVz006F4GyumDdVgU1N4BHu0001DKJ5UpVVGdTlFFQ" },
+  ],
+  []
+);
+
 
   const [active, setActive] = useState<VideoItem>(videos[0]);
 
