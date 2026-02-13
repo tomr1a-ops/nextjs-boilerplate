@@ -1,31 +1,158 @@
+"use client";
+
+import { useMemo, useState } from "react";
+
+type VideoItem = {
+  id: string; // Mux Playback ID
+  title: string;
+};
+
 export default function Home() {
+  // ✅ Put ALL your videos here (Playback IDs from Mux)
+  const videos: VideoItem[] = useMemo(
+    () => [
+      {
+        title: "AL1V1",
+        id: "EEtT1vz9FZ01DpH4iyByDjwV5w102dhuVOo6EEp12eHMU",
+      },
+      // Add more like this:
+      // { title: "AL1V2", id: "PLAYBACK_ID_HERE" },
+      // { title: "AL1V3", id: "PLAYBACK_ID_HERE" },
+      // { title: "AL1V4", id: "PLAYBACK_ID_HERE" },
+      // { title: "AL1V5", id: "PLAYBACK_ID_HERE" },
+    ],
+    []
+  );
+
+  const [active, setActive] = useState<VideoItem>(videos[0]);
+
   return (
     <div
       style={{
         minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
         backgroundColor: "#000",
         color: "#fff",
-        padding: "24px",
+        display: "flex",
+        flexDirection: "column",
       }}
     >
-      <h1 style={{ marginBottom: "20px" }}>IMA Studio Player</h1>
-
-      <iframe
-        src="https://player.mux.com/EEtT1vz9FZ01DpH4iyByDjwV5w102dhuVOo6EEp12eHMU"
+      {/* Header */}
+      <div
         style={{
-          width: "90%",
-          maxWidth: "900px",
-          aspectRatio: "16/9",
-          border: "none",
-          borderRadius: "12px",
+          padding: "18px 20px",
+          borderBottom: "1px solid rgba(255,255,255,0.12)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          flexWrap: "wrap",
         }}
-        allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
-        allowFullScreen
-      />
+      >
+        <div style={{ fontSize: 18, fontWeight: 700 }}>IMA Studio Player</div>
+        <div style={{ fontSize: 14, opacity: 0.8 }}>
+          Now Playing: <b>{active.title}</b>
+        </div>
+      </div>
+
+      {/* Body */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "360px 1fr",
+          gap: 18,
+          padding: 18,
+          flex: 1,
+        }}
+      >
+        {/* Left: Video Menu */}
+        <div
+          style={{
+            border: "1px solid rgba(255,255,255,0.12)",
+            borderRadius: 14,
+            padding: 14,
+            background: "rgba(255,255,255,0.04)",
+          }}
+        >
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>
+            Video Library
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {videos.map((v) => {
+              const isActive = v.id === active.id;
+              return (
+                <button
+                  key={v.id}
+                  onClick={() => setActive(v)}
+                  style={{
+                    width: "100%",
+                    padding: "14px 14px",
+                    borderRadius: 12,
+                    border: isActive
+                      ? "2px solid rgba(255,255,255,0.9)"
+                      : "1px solid rgba(255,255,255,0.18)",
+                    backgroundColor: isActive ? "#16a34a" : "#111827",
+                    color: "#000",
+                    fontWeight: 800,
+                    letterSpacing: 0.5,
+                    cursor: "pointer",
+                  }}
+                >
+                  {v.title}
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={{ marginTop: 14, fontSize: 12, opacity: 0.75 }}>
+            Tip: Add more videos by copying the object format in the code.
+          </div>
+        </div>
+
+        {/* Right: Player */}
+        <div
+          style={{
+            border: "1px solid rgba(255,255,255,0.12)",
+            borderRadius: 14,
+            background: "rgba(255,255,255,0.04)",
+            padding: 14,
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>
+            Player
+          </div>
+
+          <div
+            style={{
+              width: "100%",
+              borderRadius: 12,
+              overflow: "hidden",
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "#000",
+            }}
+          >
+            <iframe
+              key={active.id}
+              src={`https://player.mux.com/${active.id}`}
+              style={{
+                width: "100%",
+                border: "none",
+                aspectRatio: "16/9",
+                display: "block",
+              }}
+              allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
+              allowFullScreen
+            ></iframe>
+          </div>
+
+          <div style={{ marginTop: 10, fontSize: 12, opacity: 0.8 }}>
+            Controls (pause/seek) are in the player UI for now. Next step is
+            adding big on-screen control buttons if you want.
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
