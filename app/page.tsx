@@ -1,25 +1,31 @@
 export default function Home() {
   return (
-    <div style={{
-      minHeight: "100vh",
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: "#000",
-      color: "#fff"
-    }}>
-      <h1 style={{ marginBottom: "20px" }}>
-        IMA Studio Player
-      </h1>
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "#000",
+        color: "#fff",
+      }}
+    >
+      <h1 style={{ marginBottom: "20px" }}>IMA Studio Player</h1>
 
-      <video
-        width="800"
-        controls
-        style={{ borderRadius: "12px" }}
-      >
-        <source src="https://www.w3schools.com/html/mov_bbb.mp4" type="video/mp4" />
-      </video>
+      <iframe
+        src="https://player.mux.com/EEtT1vz9FZ01DpH4iyByDjw5w102dhuV0o6EEp12eHMU"
+        style={{
+          width: "90%",
+          maxWidth: "900px",
+          aspectRatio: "16/9",
+          border: "none",
+          borderRadius: "12px",
+        }}
+        allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
+        allowFullScreen
+      ></iframe>
     </div>
   );
 }
+
