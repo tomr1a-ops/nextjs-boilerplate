@@ -36,12 +36,11 @@ export default function Home() {
   );
 
   const [active, setActive] = useState<VideoItem>(videos[0]);
-
-  // ✅ signed playback token for the active video
   const [token, setToken] = useState<string>("");
   const [loadingToken, setLoadingToken] = useState<boolean>(false);
   const [tokenError, setTokenError] = useState<string>("");
 
+  // Fetch a signed playback token whenever the active video changes
   useEffect(() => {
     let cancelled = false;
 
@@ -57,31 +56,36 @@ export default function Home() {
         );
 
         if (!res.ok) {
-          const text = await res.text();
-          throw new Error(`Token API failed (${res.status}): ${text}`);
+          throw new Error(`Token endpoint failed: HTTP ${res.status}`);
         }
 
-        const data = await res.json();
+        const data = (await res.json()) as { token?: string };
 
-        if (!data?.token) throw new Error("Token API returned no token");
+        if (!data?.token) {
+          throw new Error("Token endpoint returned no token");
+        }
 
-        if (!cancelled) setToken(data.token);
-      } catch (e: any) {
-        if (!cancelled) setTokenError(e?.message || "Failed to fetch token");
+        if (!cancelled) {
+          setToken(data.token);
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          setTokenError(err?.message || "Failed to fetch token");
+        }
       } finally {
-        if (!cancelled) setLoadingToken(false);
+        if (!cancelled) {
+          setLoadingToken(false);
+        }
       }
     }
 
     loadToken();
-
     return () => {
       cancelled = true;
     };
   }, [active.id]);
 
-  // ✅ IMPORTANT: signed playback token must be appended to player URL
-  const playerSrc = token
+  const iframeSrc = token
     ? `https://player.mux.com/${active.id}?token=${encodeURIComponent(token)}`
     : "";
 
@@ -164,7 +168,7 @@ export default function Home() {
           </div>
 
           <div style={{ marginTop: 14, fontSize: 12, opacity: 0.75 }}>
-            Tip: Add more videos by copying the object format in the code.
+            Tip: Each click fetches a fresh signed token for that video.
           </div>
         </div>
 
@@ -190,31 +194,34 @@ export default function Home() {
               overflow: "hidden",
               border: "1px solid rgba(255,255,255,0.12)",
               background: "#000",
-              minHeight: 260,
+              minHeight: 200,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              color: "rgba(255,255,255,0.75)",
-              fontSize: 14,
-              textAlign: "center",
-              padding: 12,
             }}
           >
-            {loadingToken && <div>Loading secure token…</div>}
+            {loadingToken && (
+              <div style={{ fontSize: 14, opacity: 0.85 }}>
+                Loading signed token…
+              </div>
+            )}
 
             {!loadingToken && tokenError && (
-              <div>
-                <div style={{ fontWeight: 700, marginBottom: 6 }}>
+              <div style={{ fontSize: 14, opacity: 0.9 }}>
+                <div style={{ fontWeight: 800, marginBottom: 6 }}>
                   Token Error
                 </div>
                 <div style={{ opacity: 0.85 }}>{tokenError}</div>
+                <div style={{ marginTop: 10, opacity: 0.8, fontSize: 12 }}>
+                  Try re-clicking the video button.
+                </div>
               </div>
             )}
 
             {!loadingToken && !tokenError && token && (
               <iframe
-                key={`${active.id}:${token}`} // force reload when token changes
-                src={playerSrc}
+                key={`${active.id}-${token}`} // refresh when token changes
+                src={iframeSrc}
                 style={{
                   width: "100%",
                   border: "none",
@@ -228,8 +235,8 @@ export default function Home() {
           </div>
 
           <div style={{ marginTop: 10, fontSize: 12, opacity: 0.8 }}>
-            Controls (pause/seek) are in the player UI for now. Next step is
-            adding big on-screen control buttons if you want.
+            This player uses Signed Playback by fetching a token from{" "}
+            <code style={{ opacity: 0.9 }}>/api/mux-token</code>.
           </div>
         </div>
       </div>
