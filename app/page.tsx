@@ -7,24 +7,38 @@ type VideoItem = {
   title: string;
 };
 
+function cleanId(id: string) {
+  return (id || "").trim();
+}
+
+// Playback IDs are long base62-ish strings; this catches placeholders/short/empty/obvious bad values.
+function looksLikeMuxPlaybackId(id: string) {
+  const v = cleanId(id);
+  return /^[A-Za-z0-9]{40,80}$/.test(v);
+}
+
 export default function Home() {
   const videos: VideoItem[] = useMemo(
     () => [
-      // IMPORTANT:
-      // Put the PLAYBACK ID from Mux here (Playback & Thumbnails section), not the Asset ID.
       { title: "AL1V1", id: "EEtT1vz9FZ01DpH4iyByDjwV5w102dhuVOo6EEp12eHMU" },
 
-      // TODO: Replace these with the Playback IDs for each asset
-      // { title: "AL1V2", id: "e7X7EJp8Jahpq6flU02DnQwLFHO4TddylPRBu7K5Gbfc" },
-      // { title: "AL1V3", id: "PLAYBACK_ID_HERE" },
-      // ...
+      // If these are not real Playback IDs yet, leave them blank for now:
+      { title: "AL1V2", id: "" },
+      { title: "AL1V3", id: "" },
+      { title: "AL1V4", id: "" },
+      { title: "AL1V5", id: "" },
     ],
     []
   );
 
-  const [active, setActive] = useState<VideoItem>(videos[0]);
+  // Pick the first valid video as default
+  const firstValid = videos.find((v) => looksLikeMuxPlaybackId(v.id)) ?? videos[0];
+  const [active, setActive] = useState<VideoItem>(firstValid);
 
-  const playerSrc = `https://player.mux.com/${active.id}`;
+  const playbackId = cleanId(active.id);
+  const playerSrc = looksLikeMuxPlaybackId(playbackId)
+    ? `https://player.mux.com/${playbackId}`
+    : "";
 
   return (
     <div
@@ -79,11 +93,15 @@ export default function Home() {
 
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {videos.map((v) => {
-              const isActive = v.id === active.id;
+              const id = cleanId(v.id);
+              const isActive = cleanId(active.id) === id && id.length > 0;
+              const disabled = !looksLikeMuxPlaybackId(id);
+
               return (
                 <button
-                  key={v.id}
-                  onClick={() => setActive(v)}
+                  key={v.title}
+                  onClick={() => !disabled && setActive({ ...v, id })}
+                  disabled={disabled}
                   style={{
                     width: "100%",
                     padding: "14px 14px",
@@ -95,10 +113,12 @@ export default function Home() {
                     color: isActive ? "#000" : "#fff",
                     fontWeight: 800,
                     letterSpacing: 0.5,
-                    cursor: "pointer",
+                    cursor: disabled ? "not-allowed" : "pointer",
+                    opacity: disabled ? 0.4 : 1,
                   }}
+                  title={disabled ? "Missing/invalid Playback ID" : id}
                 >
-                  {v.title}
+                  {v.title} {disabled ? " (missing ID)" : ""}
                 </button>
               );
             })}
@@ -120,29 +140,37 @@ export default function Home() {
             Player
           </div>
 
-          <div
-            style={{
-              width: "100%",
-              borderRadius: 12,
-              overflow: "hidden",
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: "#000",
-              position: "relative",
-            }}
-          >
-            <iframe
-              key={playerSrc} // force reload when switching videos
-              src={playerSrc}
+          {!playerSrc ? (
+            <div style={{ padding: 16, opacity: 0.85 }}>
+              This button doesn’t have a valid Mux **Playback ID** yet.
+              <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>
+                Current value: <code>{JSON.stringify(active.id)}</code>
+              </div>
+            </div>
+          ) : (
+            <div
               style={{
                 width: "100%",
-                border: "none",
-                aspectRatio: "16/9",
-                display: "block",
+                borderRadius: 12,
+                overflow: "hidden",
+                border: "1px solid rgba(255,255,255,0.12)",
+                background: "#000",
               }}
-              allow="autoplay; encrypted-media; picture-in-picture;"
-              allowFullScreen
-            />
-          </div>
+            >
+              <iframe
+                key={playerSrc}
+                src={playerSrc}
+                style={{
+                  width: "100%",
+                  border: "none",
+                  aspectRatio: "16/9",
+                  display: "block",
+                }}
+                allow="autoplay; encrypted-media; picture-in-picture;"
+                allowFullScreen
+              />
+            </div>
+          )}
 
           <div style={{ marginTop: 10, fontSize: 12, opacity: 0.8 }}>
             Using PUBLIC playback IDs (no token required).
