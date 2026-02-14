@@ -195,17 +195,17 @@ export default function Home() {
               </div>
             ) : (
               <iframe
-                key={active.id}
-                src={playerSrc}
-                style={{
-                  width: "100%",
-                  border: "none",
-                  aspectRatio: "16/9",
-                  display: "block",
-                }}
-                allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
-                allowFullScreen
-              />
+  key={playerSrc}   // ✅ forces a full reload when token changes
+  src={playerSrc}
+  style={{
+    width: "100%",
+    border: "none",
+    aspectRatio: "16/9",
+    display: "block",
+  }}
+  allow="autoplay; encrypted-media; picture-in-picture;"
+  allowFullScreen
+/>
             )}
           </div>
 
