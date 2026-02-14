@@ -79,9 +79,10 @@ export default function Home() {
   }, [active.id]);
 
   const playerSrc =
-    token && !loadingToken
-      ? `https://player.mux.com/${active.id}?token=${encodeURIComponent(token)}`
-      : "";
+  token && !loadingToken
+    ? `https://player.mux.com/${active.id}?token=${encodeURIComponent(token)}&stream_type=on-demand`
+    : "";
+
 
   return (
     <div
