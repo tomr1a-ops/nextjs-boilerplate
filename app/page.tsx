@@ -8,7 +8,6 @@ type VideoItem = {
 };
 
 export default function Home() {
-  // ✅ Put ALL your videos here (Playback IDs from Mux)
   const videos: VideoItem[] = useMemo(
     () => [
       // LEVEL 1
@@ -37,10 +36,10 @@ export default function Home() {
 
   const [active, setActive] = useState<VideoItem>(videos[0]);
   const [token, setToken] = useState<string>("");
-  const [loadingToken, setLoadingToken] = useState<boolean>(false);
+  const [loadingToken, setLoadingToken] = useState<boolean>(true);
   const [tokenError, setTokenError] = useState<string>("");
 
-  // Fetch a signed playback token whenever the active video changes
+  // Fetch a signed token whenever the active video changes
   useEffect(() => {
     let cancelled = false;
 
@@ -50,32 +49,26 @@ export default function Home() {
       setTokenError("");
 
       try {
-        const res = await fetch(
-          `/api/mux-token?playbackId=${encodeURIComponent(active.id)}`,
-          { cache: "no-store" }
-        );
+        const res = await fetch(`/api/mux-token?playbackId=${encodeURIComponent(active.id)}`, {
+          cache: "no-store",
+        });
 
         if (!res.ok) {
-          throw new Error(`Token endpoint failed: HTTP ${res.status}`);
+          const txt = await res.text();
+          throw new Error(`Token API error ${res.status}: ${txt}`);
         }
 
         const data = (await res.json()) as { token?: string };
 
-        if (!data?.token) {
-          throw new Error("Token endpoint returned no token");
+        if (!data.token) {
+          throw new Error("Token API returned no token");
         }
 
-        if (!cancelled) {
-          setToken(data.token);
-        }
-      } catch (err: any) {
-        if (!cancelled) {
-          setTokenError(err?.message || "Failed to fetch token");
-        }
+        if (!cancelled) setToken(data.token);
+      } catch (e: any) {
+        if (!cancelled) setTokenError(e?.message || "Failed to load token");
       } finally {
-        if (!cancelled) {
-          setLoadingToken(false);
-        }
+        if (!cancelled) setLoadingToken(false);
       }
     }
 
@@ -85,9 +78,10 @@ export default function Home() {
     };
   }, [active.id]);
 
-  const iframeSrc = token
-    ? `https://player.mux.com/${active.id}?token=${encodeURIComponent(token)}`
-    : "";
+  const playerSrc =
+    token && !loadingToken
+      ? `https://player.mux.com/${active.id}?token=${encodeURIComponent(token)}`
+      : "";
 
   return (
     <div
@@ -166,10 +160,6 @@ export default function Home() {
               );
             })}
           </div>
-
-          <div style={{ marginTop: 14, fontSize: 12, opacity: 0.75 }}>
-            Tip: Each click fetches a fresh signed token for that video.
-          </div>
         </div>
 
         {/* Right: Player */}
@@ -194,34 +184,19 @@ export default function Home() {
               overflow: "hidden",
               border: "1px solid rgba(255,255,255,0.12)",
               background: "#000",
-              minHeight: 200,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              position: "relative",
             }}
           >
-            {loadingToken && (
-              <div style={{ fontSize: 14, opacity: 0.85 }}>
-                Loading signed token…
+            {loadingToken ? (
+              <div style={{ padding: 18, opacity: 0.85 }}>Loading signed token…</div>
+            ) : tokenError ? (
+              <div style={{ padding: 18, color: "#ffb4b4" }}>
+                Token Error: {tokenError}
               </div>
-            )}
-
-            {!loadingToken && tokenError && (
-              <div style={{ fontSize: 14, opacity: 0.9 }}>
-                <div style={{ fontWeight: 800, marginBottom: 6 }}>
-                  Token Error
-                </div>
-                <div style={{ opacity: 0.85 }}>{tokenError}</div>
-                <div style={{ marginTop: 10, opacity: 0.8, fontSize: 12 }}>
-                  Try re-clicking the video button.
-                </div>
-              </div>
-            )}
-
-            {!loadingToken && !tokenError && token && (
+            ) : (
               <iframe
-                key={`${active.id}-${token}`} // refresh when token changes
-                src={iframeSrc}
+                key={active.id}
+                src={playerSrc}
                 style={{
                   width: "100%",
                   border: "none",
@@ -235,8 +210,7 @@ export default function Home() {
           </div>
 
           <div style={{ marginTop: 10, fontSize: 12, opacity: 0.8 }}>
-            This player uses Signed Playback by fetching a token from{" "}
-            <code style={{ opacity: 0.9 }}>/api/mux-token</code>.
+            This player uses Signed Playback (token required).
           </div>
         </div>
       </div>
