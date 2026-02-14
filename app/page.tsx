@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 type VideoItem = {
   id: string; // Mux Playback ID
@@ -35,54 +35,8 @@ export default function Home() {
   );
 
   const [active, setActive] = useState<VideoItem>(videos[0]);
-  const [token, setToken] = useState<string>("");
-  const [loadingToken, setLoadingToken] = useState<boolean>(true);
-  const [tokenError, setTokenError] = useState<string>("");
 
-  // Fetch a signed token whenever the active video changes
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadToken() {
-      setLoadingToken(true);
-      setToken("");
-      setTokenError("");
-
-      try {
-        const res = await fetch(`/api/mux-token?playbackId=${encodeURIComponent(active.id)}`, {
-          cache: "no-store",
-        });
-
-        if (!res.ok) {
-          const txt = await res.text();
-          throw new Error(`Token API error ${res.status}: ${txt}`);
-        }
-
-        const data = (await res.json()) as { token?: string };
-
-        if (!data.token) {
-          throw new Error("Token API returned no token");
-        }
-
-        if (!cancelled) setToken(data.token);
-      } catch (e: any) {
-        if (!cancelled) setTokenError(e?.message || "Failed to load token");
-      } finally {
-        if (!cancelled) setLoadingToken(false);
-      }
-    }
-
-    loadToken();
-    return () => {
-      cancelled = true;
-    };
-  }, [active.id]);
-
-  const playerSrc =
-  token && !loadingToken
-    ? `https://player.mux.com/${active.id}?token=${encodeURIComponent(token)}&stream_type=on-demand`
-    : "";
-
+  const playerSrc = `https://player.mux.com/${active.id}`;
 
   return (
     <div
@@ -188,30 +142,22 @@ export default function Home() {
               position: "relative",
             }}
           >
-            {loadingToken ? (
-              <div style={{ padding: 18, opacity: 0.85 }}>Loading signed token…</div>
-            ) : tokenError ? (
-              <div style={{ padding: 18, color: "#ffb4b4" }}>
-                Token Error: {tokenError}
-              </div>
-            ) : (
-              <iframe
-  key={playerSrc}   // ✅ forces a full reload when token changes
-  src={playerSrc}
-  style={{
-    width: "100%",
-    border: "none",
-    aspectRatio: "16/9",
-    display: "block",
-  }}
-  allow="autoplay; encrypted-media; picture-in-picture;"
-  allowFullScreen
-/>
-            )}
+            <iframe
+              key={playerSrc}
+              src={playerSrc}
+              style={{
+                width: "100%",
+                border: "none",
+                aspectRatio: "16/9",
+                display: "block",
+              }}
+              allow="autoplay; encrypted-media; picture-in-picture;"
+              allowFullScreen
+            />
           </div>
 
           <div style={{ marginTop: 10, fontSize: 12, opacity: 0.8 }}>
-            This player uses Signed Playback (token required).
+            Public Playback (no token).
           </div>
         </div>
       </div>
