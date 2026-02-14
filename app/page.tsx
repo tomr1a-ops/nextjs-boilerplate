@@ -12,7 +12,7 @@ export default function Home() {
     () => [
       // IMPORTANT:
       // Put the PLAYBACK ID from Mux here (Playback & Thumbnails section), not the Asset ID.
-      { title: "AL1V1", id: "EEtTlvz9FZ0IDpH4iyByDjwV5wI02dhuVOo6EEp12eHMU" },
+      { title: "AL1V1", id: "EEtT1vz9FZOIDpH4iyByDjwV5wl02dhuVOo6EEp12eHMU" },
 
       // TODO: Replace these with the Playback IDs for each asset
       // { title: "AL1V2", id: "PLAYBACK_ID_HERE" },
