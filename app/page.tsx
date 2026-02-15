@@ -2,31 +2,34 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-type VideoItem = {
-  id: string; // Mux PLAYBACK ID (long string)
-  title: string; // Label like AL1V1
-};
+type VideoItem = { id: string; title: string };
 
 type SessionData = {
   room_id?: string;
-  playback_id?: string | null; // can be "AL1V1" OR a long Mux playback id depending on server/db
+  playback_id?: string | null; // may be label OR mux id; server will store mux id after your map
   state?: "playing" | "paused" | "stopped" | string;
   started_at?: string | null;
   paused_at?: string | null;
   updated_at?: string | null;
 };
 
-function cleanId(id: string) {
-  return (id || "").trim();
-}
-
-// Loose check (kept for UI disabling only)
-function looksLikeMuxPlaybackId(id: string) {
-  const v = cleanId(id);
-  return /^[A-Za-z0-9]{40,120}$/.test(v);
+function clean(s: string) {
+  return (s || "").trim();
 }
 
 export default function Home() {
+  // Read URL params
+  const [roomId, setRoomId] = useState("studioA");
+  const [mode, setMode] = useState<"player" | "controller">("controller");
+
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search);
+    const room = clean(sp.get("room") || "studioA");
+    const m = clean(sp.get("mode") || "controller");
+    setRoomId(room || "studioA");
+    setMode(m === "player" ? "player" : "controller");
+  }, []);
+
   const videos: VideoItem[] = useMemo(
     () => [
       { title: "AL1V1", id: "EEtT1vz9FZ01DpH4iyByDjwV5w102dhuVOo6EEp12eHMU" },
@@ -48,84 +51,56 @@ export default function Home() {
     []
   );
 
-  const firstValid = videos.find((v) => looksLikeMuxPlaybackId(v.id)) ?? videos[0];
-
-  const [active, setActive] = useState<VideoItem>(firstValid);
-  const [remoteState, setRemoteState] = useState<string>("local");
-  const [lastRemoteValue, setLastRemoteValue] = useState<string>("");
-
-  // avoid re-applying the same remote value over and over
+  const [activeMuxId, setActiveMuxId] = useState<string>("");
+  const [remoteState, setRemoteState] = useState<string>("unknown");
   const lastAppliedRef = useRef<string>("");
 
-  // Map session.playback_id -> a VideoItem
-  // Handles BOTH cases:
-  // 1) playback_id is a LABEL like "AL1V1"
-  // 2) playback_id is the LONG mux id like "EEtT1vz..."
-  function resolveFromSessionPlaybackId(pb: string | null | undefined): VideoItem | null {
-    const raw = (pb || "").trim();
-    if (!raw) return null;
-
-    // Case 1: label
-    const byTitle = videos.find((v) => v.title === raw);
-    if (byTitle) return byTitle;
-
-    // Case 2: long mux id
-    const byId = videos.find((v) => cleanId(v.id) === raw);
-    if (byId) return byId;
-
-    return null;
-  }
-
   async function postSession(update: Partial<SessionData>) {
-    const res = await fetch("/api/session", {
+    const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(update),
     });
-
     if (!res.ok) {
-      const txt = await res.text().catch(() => "");
-      throw new Error(`POST /api/session failed (${res.status}) ${txt}`);
+      const t = await res.text().catch(() => "");
+      throw new Error(`POST failed (${res.status}) ${t}`);
     }
   }
 
-  // Poll /api/session every 1s and sync player
+  // Poll the room state
   useEffect(() => {
+    if (!roomId) return;
+
     let alive = true;
 
     async function tick() {
       try {
-        const res = await fetch("/api/session", { cache: "no-store" });
+        const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, {
+          cache: "no-store",
+        });
         if (!res.ok) return;
-
         const data = (await res.json()) as SessionData;
         if (!alive) return;
 
-        const state = (data.state || "").toString();
+        const state = clean(String(data.state || ""));
         setRemoteState(state || "unknown");
 
-        const pb = (data.playback_id || "").toString().trim();
-        if (pb) setLastRemoteValue(pb);
-
-        // STOP: blank player
         if (state === "stopped") {
           if (lastAppliedRef.current !== "STOPPED") {
             lastAppliedRef.current = "STOPPED";
-            setActive((prev) => ({ ...prev, id: "" }));
+            setActiveMuxId("");
           }
           return;
         }
 
-        const resolved = resolveFromSessionPlaybackId(data.playback_id);
-        if (!resolved) return;
+        const muxId = clean(String(data.playback_id || ""));
+        if (!muxId) return;
 
-        if (lastAppliedRef.current !== resolved.title) {
-          lastAppliedRef.current = resolved.title;
-          setActive(resolved);
+        if (lastAppliedRef.current !== muxId) {
+          lastAppliedRef.current = muxId;
+          setActiveMuxId(muxId);
         }
-      } catch {
-        // ignore polling errors
-      }
+      } catch {}
     }
 
     tick();
@@ -135,32 +110,20 @@ export default function Home() {
       alive = false;
       window.clearInterval(id);
     };
-  }, [videos]);
+  }, [roomId]);
 
-  // Build player URL from the LONG mux id stored in active.id
-  const muxId = cleanId(active.id);
-  const playerSrc = muxId ? `https://player.mux.com/${muxId}` : "";
+  const playerSrc = activeMuxId ? `https://player.mux.com/${activeMuxId}` : "";
 
-  async function handlePick(v: VideoItem) {
-    const id = cleanId(v.id);
-    if (!looksLikeMuxPlaybackId(id)) return;
-
-    // local UI update
-    setActive({ ...v, id });
-
-    // remote update:
-    // Send the LABEL (AL1V1). Your API converts/stores the long mux id.
+  async function handlePick(label: string) {
     await postSession({
       state: "playing",
-      playback_id: v.title,
+      playback_id: label, // you send AL1V1; server stores mux id
       started_at: new Date().toISOString(),
       paused_at: null,
     });
   }
 
   async function handleStop() {
-    setActive((prev) => ({ ...prev, id: "" }));
-
     await postSession({
       state: "stopped",
       playback_id: null,
@@ -169,167 +132,92 @@ export default function Home() {
     });
   }
 
-  const playing = !!playerSrc;
-
-  return (
-    <div
-      style={{
-        minHeight: "100vh",
-        backgroundColor: "#000",
-        color: "#fff",
-        display: "flex",
-        flexDirection: "column",
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          padding: "18px 20px",
-          borderBottom: "1px solid rgba(255,255,255,0.12)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-          flexWrap: "wrap",
-        }}
-      >
-        <div style={{ fontSize: 18, fontWeight: 700 }}>IMA Studio Player</div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <div style={{ fontSize: 14, opacity: 0.8 }}>
-            Remote: <b>{remoteState || "unknown"}</b>
-            {lastRemoteValue ? (
-              <>
-                {" "}
-                • Session: <b>{lastRemoteValue}</b>
-              </>
-            ) : null}
-          </div>
-
-          <button
-            onClick={handleStop}
+  // PLAYER MODE (Fire TV): fullscreen, no menu
+  if (mode === "player") {
+    return (
+      <div style={{ minHeight: "100vh", background: "#000" }}>
+        {!playerSrc ? null : (
+          <iframe
+            key={playerSrc}
+            src={playerSrc}
             style={{
-              padding: "10px 14px",
-              borderRadius: 10,
+              width: "100vw",
+              height: "100vh",
+              border: "none",
+              display: "block",
+              background: "#000",
+            }}
+            allow="autoplay; encrypted-media; picture-in-picture;"
+            allowFullScreen
+          />
+        )}
+
+        {/* tiny overlay for debugging (optional) */}
+        <div
+          style={{
+            position: "fixed",
+            right: 12,
+            bottom: 12,
+            padding: "6px 10px",
+            borderRadius: 10,
+            background: "rgba(0,0,0,0.55)",
+            color: "#fff",
+            fontSize: 12,
+          }}
+        >
+          room: <b>{roomId}</b> • state: <b>{remoteState}</b>
+        </div>
+      </div>
+    );
+  }
+
+  // CONTROLLER MODE (Phone/iPad)
+  return (
+    <div style={{ minHeight: "100vh", background: "#000", color: "#fff", padding: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ fontSize: 18, fontWeight: 800 }}>IMAOS Room Controller</div>
+        <div style={{ fontSize: 14, opacity: 0.85 }}>
+          room: <b>{roomId}</b> • state: <b>{remoteState}</b>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        {videos.map((v) => (
+          <button
+            key={v.title}
+            onClick={() => handlePick(v.title)}
+            style={{
+              padding: "14px 14px",
+              borderRadius: 12,
               border: "1px solid rgba(255,255,255,0.18)",
-              backgroundColor: "#374151",
-              color: "#fff",
-              fontWeight: 800,
+              background: "#16a34a",
+              color: "#000",
+              fontWeight: 900,
+              letterSpacing: 0.5,
               cursor: "pointer",
             }}
-            title="Stop (clears session)"
           >
-            STOP
+            {v.title}
           </button>
-        </div>
+        ))}
       </div>
 
-      {/* Body */}
-      <div
+      <button
+        onClick={handleStop}
         style={{
-          display: "grid",
-          gridTemplateColumns: "360px 1fr",
-          gap: 18,
-          padding: 18,
-          flex: 1,
+          marginTop: 14,
+          width: "100%",
+          padding: "14px 14px",
+          borderRadius: 12,
+          border: "1px solid rgba(255,255,255,0.18)",
+          background: "#374151",
+          color: "#fff",
+          fontWeight: 900,
+          cursor: "pointer",
         }}
       >
-        {/* Left: Video Menu */}
-        <div
-          style={{
-            border: "1px solid rgba(255,255,255,0.12)",
-            borderRadius: 14,
-            padding: 14,
-            background: "rgba(255,255,255,0.04)",
-          }}
-        >
-          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>Video Library</div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {videos.map((v) => {
-              const id = cleanId(v.id);
-              const disabled = !looksLikeMuxPlaybackId(id);
-              const isActive = v.title === active.title && playing;
-
-              return (
-                <button
-                  key={v.title}
-                  onClick={() => !disabled && handlePick(v)}
-                  disabled={disabled}
-                  style={{
-                    width: "100%",
-                    padding: "14px 14px",
-                    borderRadius: 12,
-                    border: isActive
-                      ? "2px solid rgba(255,255,255,0.9)"
-                      : "1px solid rgba(255,255,255,0.18)",
-                    backgroundColor: isActive ? "#16a34a" : "#111827",
-                    color: isActive ? "#000" : "#fff",
-                    fontWeight: 800,
-                    letterSpacing: 0.5,
-                    cursor: disabled ? "not-allowed" : "pointer",
-                    opacity: disabled ? 0.4 : 1,
-                  }}
-                  title={disabled ? "Missing/invalid Mux Playback ID" : id}
-                >
-                  {v.title} {disabled ? " (missing ID)" : ""}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Right: Player */}
-        <div
-          style={{
-            border: "1px solid rgba(255,255,255,0.12)",
-            borderRadius: 14,
-            background: "rgba(255,255,255,0.04)",
-            padding: 14,
-            display: "flex",
-            flexDirection: "column",
-          }}
-        >
-          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>Player</div>
-
-          {!playerSrc ? (
-            <div style={{ padding: 16, opacity: 0.85 }}>
-              Player is stopped (or no valid Mux Playback ID selected).
-              <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>
-                Current title: <code>{JSON.stringify(active.title)}</code>
-              </div>
-            </div>
-          ) : (
-            <div
-              style={{
-                width: "100%",
-                borderRadius: 12,
-                overflow: "hidden",
-                border: "1px solid rgba(255,255,255,0.12)",
-                background: "#000",
-              }}
-            >
-              <iframe
-                key={playerSrc}
-                src={playerSrc}
-                style={{
-                  width: "100%",
-                  border: "none",
-                  aspectRatio: "16/9",
-                  display: "block",
-                }}
-                allow="autoplay; encrypted-media; picture-in-picture;"
-                allowFullScreen
-              />
-            </div>
-          )}
-
-          <div style={{ marginTop: 10, fontSize: 12, opacity: 0.8 }}>
-            Polling <code>/api/session</code> every 1s. Send labels (AL1V1…) to{" "}
-            <code>POST /api/session</code>.
-          </div>
-        </div>
-      </div>
+        STOP
+      </button>
     </div>
   );
 }
