@@ -3,13 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type VideoItem = {
-  id: string; // Mux PLAYBACK ID (not Asset ID)
+  id: string; // Mux PLAYBACK ID (long string)
   title: string; // Label like AL1V1
 };
 
 type SessionData = {
   room_id?: string;
-  playback_id?: string | null; // we expect this to be "AL1V1" etc (label)
+  playback_id?: string | null; // can be "AL1V1" OR a long Mux playback id depending on server/db
   state?: "playing" | "paused" | "stopped" | string;
   started_at?: string | null;
   paused_at?: string | null;
@@ -20,10 +20,10 @@ function cleanId(id: string) {
   return (id || "").trim();
 }
 
-// Mux Playback IDs are long base62-ish strings; this catches placeholders/short/empty/obvious bad values.
+// Loose check (kept for UI disabling only)
 function looksLikeMuxPlaybackId(id: string) {
   const v = cleanId(id);
-  return /^[A-Za-z0-9]{40,80}$/.test(v);
+  return /^[A-Za-z0-9]{40,120}$/.test(v);
 }
 
 export default function Home() {
@@ -48,35 +48,34 @@ export default function Home() {
     []
   );
 
-  // Pick the first valid video as default
   const firstValid = videos.find((v) => looksLikeMuxPlaybackId(v.id)) ?? videos[0];
 
   const [active, setActive] = useState<VideoItem>(firstValid);
   const [remoteState, setRemoteState] = useState<string>("local");
-  const [lastRemoteLabel, setLastRemoteLabel] = useState<string>("");
+  const [lastRemoteValue, setLastRemoteValue] = useState<string>("");
 
-  // used to avoid re-applying the same remote value over and over
+  // avoid re-applying the same remote value over and over
   const lastAppliedRef = useRef<string>("");
 
-  // ---- helper: map session.playback_id to a VideoItem
+  // Map session.playback_id -> a VideoItem
+  // Handles BOTH cases:
+  // 1) playback_id is a LABEL like "AL1V1"
+  // 2) playback_id is the LONG mux id like "EEtT1vz..."
   function resolveFromSessionPlaybackId(pb: string | null | undefined): VideoItem | null {
     const raw = (pb || "").trim();
     if (!raw) return null;
 
-    // If Supabase stores the LABEL (AL1V1, etc)
+    // Case 1: label
     const byTitle = videos.find((v) => v.title === raw);
     if (byTitle) return byTitle;
 
-    // If it ever stores the actual Mux playback id
-    if (looksLikeMuxPlaybackId(raw)) {
-      const byId = videos.find((v) => cleanId(v.id) === raw);
-      if (byId) return byId;
-    }
+    // Case 2: long mux id
+    const byId = videos.find((v) => cleanId(v.id) === raw);
+    if (byId) return byId;
 
     return null;
   }
 
-  // ---- POST helper
   async function postSession(update: Partial<SessionData>) {
     const res = await fetch("/api/session", {
       method: "POST",
@@ -90,7 +89,7 @@ export default function Home() {
     }
   }
 
-  // ---- Poll /api/session every 1s and sync the player
+  // Poll /api/session every 1s and sync player
   useEffect(() => {
     let alive = true;
 
@@ -100,20 +99,18 @@ export default function Home() {
         if (!res.ok) return;
 
         const data = (await res.json()) as SessionData;
-
         if (!alive) return;
 
         const state = (data.state || "").toString();
         setRemoteState(state || "unknown");
 
-        const label = (data.playback_id || "").toString().trim(); // "AL1V1" etc
-        if (label) setLastRemoteLabel(label);
+        const pb = (data.playback_id || "").toString().trim();
+        if (pb) setLastRemoteValue(pb);
 
-        // handle STOP: blank the player by setting active to an empty id (still shows menu)
+        // STOP: blank player
         if (state === "stopped") {
           if (lastAppliedRef.current !== "STOPPED") {
             lastAppliedRef.current = "STOPPED";
-            // keep the title display but blank the src
             setActive((prev) => ({ ...prev, id: "" }));
           }
           return;
@@ -122,17 +119,15 @@ export default function Home() {
         const resolved = resolveFromSessionPlaybackId(data.playback_id);
         if (!resolved) return;
 
-        // only switch if changed
         if (lastAppliedRef.current !== resolved.title) {
           lastAppliedRef.current = resolved.title;
           setActive(resolved);
         }
       } catch {
-        // ignore polling errors (network hiccups, deploys, etc)
+        // ignore polling errors
       }
     }
 
-    // immediate tick + interval
     tick();
     const id = window.setInterval(tick, 1000);
 
@@ -142,35 +137,30 @@ export default function Home() {
     };
   }, [videos]);
 
-  // Build player URL
-  const playbackId = cleanId(active.id);
+  // Build player URL from the LONG mux id stored in active.id
+  const muxId = cleanId(active.id);
+  const playerSrc = muxId ? `https://player.mux.com/${muxId}` : "";
 
-  // If active.id is blank (stopped), show no player
-  const playerSrc =
-    looksLikeMuxPlaybackId(playbackId) ? `https://player.mux.com/${playbackId}` : "";
-
-  // Click a button: set local + POST to Supabase
   async function handlePick(v: VideoItem) {
     const id = cleanId(v.id);
     if (!looksLikeMuxPlaybackId(id)) return;
 
-    // update local immediately (fast UI)
+    // local UI update
     setActive({ ...v, id });
 
-    // update remote session (Supabase stores the LABEL in playback_id)
+    // remote update:
+    // Send the LABEL (AL1V1). Your API converts/stores the long mux id.
     await postSession({
       state: "playing",
-      playback_id: v.title, // this matches what you tested manually
+      playback_id: v.title,
       started_at: new Date().toISOString(),
       paused_at: null,
     });
   }
 
   async function handleStop() {
-    // local
     setActive((prev) => ({ ...prev, id: "" }));
 
-    // remote
     await postSession({
       state: "stopped",
       playback_id: null,
@@ -178,6 +168,8 @@ export default function Home() {
       paused_at: null,
     });
   }
+
+  const playing = !!playerSrc;
 
   return (
     <div
@@ -206,10 +198,10 @@ export default function Home() {
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <div style={{ fontSize: 14, opacity: 0.8 }}>
             Remote: <b>{remoteState || "unknown"}</b>
-            {lastRemoteLabel ? (
+            {lastRemoteValue ? (
               <>
                 {" "}
-                • Session: <b>{lastRemoteLabel}</b>
+                • Session: <b>{lastRemoteValue}</b>
               </>
             ) : null}
           </div>
@@ -251,15 +243,13 @@ export default function Home() {
             background: "rgba(255,255,255,0.04)",
           }}
         >
-          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>
-            Video Library
-          </div>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>Video Library</div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {videos.map((v) => {
               const id = cleanId(v.id);
-              const isActive = v.title === active.title && looksLikeMuxPlaybackId(playbackId);
               const disabled = !looksLikeMuxPlaybackId(id);
+              const isActive = v.title === active.title && playing;
 
               return (
                 <button
@@ -280,7 +270,7 @@ export default function Home() {
                     cursor: disabled ? "not-allowed" : "pointer",
                     opacity: disabled ? 0.4 : 1,
                   }}
-                  title={disabled ? "Missing/invalid Playback ID" : id}
+                  title={disabled ? "Missing/invalid Mux Playback ID" : id}
                 >
                   {v.title} {disabled ? " (missing ID)" : ""}
                 </button>
@@ -335,8 +325,8 @@ export default function Home() {
           )}
 
           <div style={{ marginTop: 10, fontSize: 12, opacity: 0.8 }}>
-            Polling <code>/api/session</code> every 1s. DB stores{" "}
-            <code>playback_id</code> as the label (AL1V1…).
+            Polling <code>/api/session</code> every 1s. Send labels (AL1V1…) to{" "}
+            <code>POST /api/session</code>.
           </div>
         </div>
       </div>
