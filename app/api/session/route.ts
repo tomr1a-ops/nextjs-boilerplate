@@ -24,20 +24,32 @@ export async function GET() {
 // UPDATE room state
 export async function POST(request: Request) {
   const body = await request.json();
-  const { state, video_id, started_at } = body;
 
-  const { error } = await supabase
+  // Accept either "playback_id" (preferred) or legacy "video_id"
+  const {
+    state,
+    playback_id,
+    video_id,
+    started_at,
+    paused_at,
+  } = body;
+
+  const { data, error } = await supabase
     .from("room_sessions")
     .update({
       state,
-      video_id,
-      started_at,
+      playback_id: playback_id ?? video_id ?? null,
+      started_at: started_at ?? null,
+      paused_at: paused_at ?? null,
     })
-    .eq("room_id", "studioA");
+    .eq("room_id", "studioA")
+    .select("*")
+    .single();
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json(data);
 }
+
