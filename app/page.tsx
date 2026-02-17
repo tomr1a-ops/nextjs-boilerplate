@@ -1,54 +1,78 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
+
+type VideoRow = {
+  label: string;
+  playback_id: string;
+  sort_order: number;
+  active: boolean;
+};
 
 type SessionData = {
   room_id?: string;
-  playback_id?: string | null; // label like "AL1V1"
+  playback_id?: string | null; // NOTE: in your DB this is the REAL mux playback id after normalization
   state?: "playing" | "paused" | "stopped" | string;
   started_at?: string | null;
   paused_at?: string | null;
   updated_at?: string | null;
 };
 
+export const dynamic = "force-dynamic";
+
 function clean(v: any) {
   return (v ?? "").toString().trim();
 }
 
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! // sb_publishable_...
+);
+
 export default function Home() {
+  // For now, keep your test room fixed.
+  // Later we’ll make this dynamic (/controller/[roomId]).
   const roomId = "studioA";
 
-  const videos = useMemo(
-    () => [
-      "AL1V1",
-      "AL1V2",
-      "AL1V3",
-      "AL1V4",
-      "AL1V5",
-      "AL2V1",
-      "AL2V2",
-      "AL2V3",
-      "AL2V4",
-      "AL2V5",
-      "AL3V1",
-      "AL3V2",
-      "AL3V3",
-      "AL3V4",
-      "AL3V5",
-    ],
-    []
-  );
-
+  const [videos, setVideos] = useState<VideoRow[]>([]);
   const [remoteState, setRemoteState] = useState<string>("loading");
-  const [sessionLabel, setSessionLabel] = useState<string>("");
+  const [sessionPlaybackId, setSessionPlaybackId] = useState<string>(""); // real mux id
   const [busy, setBusy] = useState<boolean>(false);
   const [err, setErr] = useState<string>("");
 
   // avoid re-applying same state endlessly
   const lastSeen = useRef<string>("");
 
+  // Load the 15 videos from Supabase (and any future ones you add)
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      setErr("");
+      const { data, error } = await supabase
+        .from("videos")
+        .select("label, playback_id, sort_order, active")
+        .eq("active", true)
+        .order("sort_order", { ascending: true });
+
+      if (!alive) return;
+
+      if (error) {
+        setErr(`Videos load failed: ${error.message}`);
+        return;
+      }
+
+      setVideos((data || []) as VideoRow[]);
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   async function postSession(update: Partial<SessionData>) {
-    const res = await fetch("/api/session", {
+    const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(update),
@@ -64,21 +88,24 @@ export default function Home() {
   }
 
   async function refresh() {
-    const res = await fetch("/api/session", { cache: "no-store" });
+    const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, {
+      cache: "no-store",
+    });
     if (!res.ok) return;
+
     const data = (await res.json()) as SessionData;
 
     const state = clean(data.state) || "unknown";
-    const label = clean(data.playback_id);
+    const pb = clean(data.playback_id); // real mux id in room_sessions after your normalization
 
     setRemoteState(state);
-    setSessionLabel(label);
+    setSessionPlaybackId(pb);
 
-    const stamp = `${state}:${label}`;
+    const stamp = `${state}:${pb}`;
     lastSeen.current = stamp;
   }
 
-  // poll every 1s
+  // poll every 1s (we can upgrade to realtime later)
   useEffect(() => {
     let alive = true;
 
@@ -103,13 +130,15 @@ export default function Home() {
     setErr("");
     setBusy(true);
     try {
+      // IMPORTANT: send the LABEL, not mux id.
+      // Your /api/session route converts label -> mux id using Supabase videos table.
       await postSession({
         state: "playing",
-        playback_id: label, // <-- THIS IS THE ONLY THING WE NEED
+        playback_id: label,
         started_at: new Date().toISOString(),
         paused_at: null,
       });
-      // immediate refresh so UI updates instantly
+
       await refresh();
     } catch (e: any) {
       setErr(e?.message || "Unknown error");
@@ -135,6 +164,11 @@ export default function Home() {
       setBusy(false);
     }
   }
+
+  // Determine which label is currently playing by matching the session mux id to videos table
+  const currentLabel =
+    sessionPlaybackId &&
+    videos.find((v) => clean(v.playback_id) === clean(sessionPlaybackId))?.label;
 
   return (
     <div
@@ -162,10 +196,10 @@ export default function Home() {
 
         <div style={{ fontSize: 14, opacity: 0.85 }}>
           room: <b>{roomId}</b> • state: <b>{remoteState}</b>
-          {sessionLabel ? (
+          {currentLabel ? (
             <>
               {" "}
-              • session: <b>{sessionLabel}</b>
+              • now: <b>{currentLabel}</b>
             </>
           ) : null}
         </div>
@@ -194,12 +228,12 @@ export default function Home() {
           flex: 1,
         }}
       >
-        {videos.map((label) => {
-          const isActive = sessionLabel === label && remoteState === "playing";
+        {videos.map((v) => {
+          const isActive = currentLabel === v.label && remoteState === "playing";
           return (
             <button
-              key={label}
-              onClick={() => handlePick(label)}
+              key={v.label}
+              onClick={() => handlePick(v.label)}
               disabled={busy}
               style={{
                 width: "100%",
@@ -217,10 +251,17 @@ export default function Home() {
                 opacity: busy ? 0.7 : 1,
               }}
             >
-              {label}
+              {v.label}
             </button>
           );
         })}
+
+        {!videos.length ? (
+          <div style={{ gridColumn: "1 / -1", opacity: 0.8, fontSize: 13 }}>
+            Loading videos… (If this never loads, check NEXT_PUBLIC_SUPABASE_ANON_KEY and
+            RLS policy on public.videos)
+          </div>
+        ) : null}
       </div>
 
       {/* Stop */}
