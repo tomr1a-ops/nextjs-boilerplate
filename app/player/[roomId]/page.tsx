@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase-browser";
-import MuxPlayer from "@mux/mux-player-react";
 
 type RoomSession = {
   room_id: string;
@@ -16,6 +15,18 @@ export default function PlayerPage() {
   const roomId = params?.roomId as string;
 
   const [session, setSession] = useState<RoomSession | null>(null);
+
+  // Load Mux Player web component (no npm install needed)
+  useEffect(() => {
+    const existing = document.querySelector('script[data-mux-player="1"]');
+    if (existing) return;
+
+    const s = document.createElement("script");
+    s.src = "https://unpkg.com/@mux/mux-player";
+    s.async = true;
+    s.setAttribute("data-mux-player", "1");
+    document.head.appendChild(s);
+  }, []);
 
   // Initial fetch
   useEffect(() => {
@@ -67,17 +78,18 @@ export default function PlayerPage() {
   const playbackId = session?.playback_id ?? null;
   const state = session?.state ?? "idle";
 
-  // Key trick: remount player when playbackId changes
+  // Remount the mux-player element when playback changes
   const playerKey = useMemo(() => playbackId || "no-video", [playbackId]);
 
   return (
     <div style={{ width: "100vw", height: "100vh", background: "black" }}>
       {playbackId ? (
-        <MuxPlayer
+        // @ts-ignore — mux-player is a custom element
+        <mux-player
           key={playerKey}
-          playbackId={playbackId}
-          streamType="on-demand"
-          autoPlay={state === "playing"}
+          playback-id={playbackId}
+          stream-type="on-demand"
+          autoplay={state === "playing"}
           muted
           style={{ width: "100%", height: "100%" }}
         />
