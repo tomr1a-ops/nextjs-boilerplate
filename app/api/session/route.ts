@@ -4,35 +4,46 @@ import { createClient } from "@supabase/supabase-js";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+// Server-side Supabase client (uses service role key — keep this ONLY on server)
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-// Map your short labels -> real Mux Playback IDs
-const PLAYBACK_MAP: Record<string, string> = {
-  AL1V1: "EEtT1vz9FZ01DpH4iyByDjwV5w102dhuVOo6EEp12eHMU",
-  AL1V2: "e7X7EJp8Jahpq6flU02DnQwLFHO4TddylPRBu7K5Gbfc",
-  AL1V3: "XuLHibjnFLc8qk9Igm9Hy9zdjWuxQkmWUYtnIj17mCE",
-  AL1V4: "4qL5JKtULtosN2ZBIk6LeWOiTltq3MPN502EKyX5mxJk",
-  AL1V5: "Cnk501oW00IqBMr4mAvMTbuVVCBBuSnPBZjZPcyvfnOKc",
-  AL2V1: "K8gSatGtFiAFoHOX1y00UCBoJ7QAf62yLv47ssZ3EX00I",
-  AL2V2: "1AdrfOytgHRI8Wz01YSe01FPLM4l7lPsz00frWqqFk4TP8",
-  AL2V3: "FetjqAx46HX2N11C2MAxKs2n0116bzvJgWl62FceIJoE",
-  AL2V4: "yxgsEPSAz60000OPuQUOB7RzQE277ckkVMq14cbfHU2sU",
-  AL2V5: "vyYgEDdFFyugHokVXjoKxBvb2Sz7mxRVf66R6LtrXEA",
-  AL3V1: "bDKMIv2brILRM019XxKPJoubPCcznJUIE19YxQUUsPmI",
-  AL3V2: "bCUqBVSqt1gAVV02BgYUStXSC2V1Omce4cxUB8ijV8J8",
-  AL3V3: "qH3sUQwV01g00fZrmCPE01wz00RjQ1UGJhnwmj8ARhQ3j7o",
-  AL3V4: "ePFMYIR5bse5uoNszdbXtOKywa89pKtfv01jcq1PJwAk",
-  AL3V5: "zorscGp9dOlOHdMpPoVf001hW6ByEVKJeTL00GIVPWFkQ",
-};
+/**
+ * Fetch label -> mux playback_id from Supabase table: public.videos
+ * Expected columns: label (text), playback_id (text), active (bool)
+ */
+async function lookupMuxPlaybackId(label: string): Promise<string | null> {
+  const clean = (label ?? "").toString().trim();
+  if (!clean) return null;
 
-function normalizePlaybackId(input: unknown): string | null {
+  const { data, error } = await supabase
+    .from("videos")
+    .select("playback_id")
+    .eq("label", clean)
+    .eq("active", true)
+    .single();
+
+  if (error || !data?.playback_id) return null;
+  return (data.playback_id ?? "").toString().trim() || null;
+}
+
+/**
+ * If input is a label (AL1V1...), translate via Supabase.
+ * If it's already a mux playback id, return as-is.
+ */
+async function normalizePlaybackId(input: unknown): Promise<string | null> {
   const raw = typeof input === "string" ? input.trim() : "";
   if (!raw) return null;
-  if (PLAYBACK_MAP[raw]) return PLAYBACK_MAP[raw]; // label -> mux id
-  return raw; // already mux id
+
+  // If it looks like a label (e.g., AL1V1), prefer DB lookup
+  // (Also works even if someone passes a mux id: lookup will just fail and we fall back)
+  const fromDb = await lookupMuxPlaybackId(raw);
+  if (fromDb) return fromDb;
+
+  // Not a known label in DB; assume caller passed a real mux playback id already
+  return raw;
 }
 
 function getRoomId(url: URL) {
@@ -50,7 +61,10 @@ export async function GET(request: Request) {
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message, room_id: roomId }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message, room_id: roomId },
+      { status: 500 }
+    );
   }
 
   return NextResponse.json(data);
@@ -61,10 +75,24 @@ export async function POST(request: Request) {
   const url = new URL(request.url);
   const roomId = getRoomId(url);
 
-  const body = await request.json();
-  const { state, playback_id, video_id, started_at, paused_at } = body;
+  const body = await request.json().catch(() => ({}));
+  const { state, playback_id, video_id, started_at, paused_at } = body as {
+    state?: string | null;
+    playback_id?: string | null;
+    video_id?: string | null;
+    started_at?: string | null;
+    paused_at?: string | null;
+  };
 
-  const normalized = normalizePlaybackId(playback_id ?? video_id);
+  const normalized = await normalizePlaybackId(playback_id ?? video_id);
+
+  // If they're trying to play something, require a valid normalized id
+  if ((state === "playing" || state === "paused") && !normalized) {
+    return NextResponse.json(
+      { error: "Missing or invalid playback_id/video_id", room_id: roomId },
+      { status: 400 }
+    );
+  }
 
   const { data, error } = await supabase
     .from("room_sessions")
@@ -79,7 +107,10 @@ export async function POST(request: Request) {
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message, room_id: roomId }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message, room_id: roomId },
+      { status: 500 }
+    );
   }
 
   return NextResponse.json(data);
