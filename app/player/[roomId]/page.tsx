@@ -1,90 +1,128 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase-browser";
 
-type RoomSession = {
+type RoomSessionRow = {
   room_id: string;
   playback_id: string | null;
   state: string | null;
+  started_at: string | null;
+  paused_at: string | null;
+  updated_at: string | null;
 };
 
-export default function PlayerPage() {
-  const params = useParams();
-  const roomId = params?.roomId as string;
+export default function PlayerPage({
+  params,
+}: {
+  params: { roomId: string };
+}) {
+  const roomId = params.roomId;
 
+  const [row, setRow] = useState<RoomSessionRow | null>(null);
   const [playbackId, setPlaybackId] = useState<string | null>(null);
   const [state, setState] = useState<string | null>(null);
 
-  // Load current room state on mount
-  useEffect(() => {
-    if (!roomId) return;
+  // Debug helpers (so we can see EXACTLY what Supabase returns)
+  const [debugData, setDebugData] = useState<any>(null);
+  const [debugError, setDebugError] = useState<any>(null);
 
-    async function loadInitial() {
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      setDebugData(null);
+      setDebugError(null);
+
       const { data, error } = await supabase
         .from("room_sessions")
         .select("*")
-        .eq("room_id", roomId)
-        .single();
+        .eq("room_id", roomId);
 
-      if (!error && data) {
-        setPlaybackId(data.playback_id);
-        setState(data.state);
+      if (cancelled) return;
+
+      setDebugData(data);
+      setDebugError(error);
+
+      if (error) {
+        setRow(null);
+        setPlaybackId(null);
+        setState(null);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        const first = data[0] as RoomSessionRow;
+        setRow(first);
+        setPlaybackId(first.playback_id);
+        setState(first.state);
+      } else {
+        setRow(null);
+        setPlaybackId(null);
+        setState(null);
       }
     }
 
-    loadInitial();
-  }, [roomId]);
-
-  // Realtime subscription
-  useEffect(() => {
-    if (!roomId) return;
-
-    const channel = supabase
-      .channel("room-" + roomId)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "room_sessions",
-          filter: `room_id=eq.${roomId}`,
-        },
-        (payload) => {
-          const newData = payload.new as RoomSession;
-          setPlaybackId(newData.playback_id);
-          setState(newData.state);
-        }
-      )
-      .subscribe();
+    load();
 
     return () => {
-      supabase.removeChannel(channel);
+      cancelled = true;
     };
   }, [roomId]);
 
   return (
-    <div style={{ background: "#000", minHeight: "100vh", color: "#fff" }}>
-      <div style={{ padding: 20 }}>
-        <h1>IMA Studio Player</h1>
-        <p>Room: {roomId}</p>
-        <p>State: {state}</p>
+    <div style={{ padding: 40, color: "white", background: "black", minHeight: "100vh" }}>
+      <h1 style={{ fontSize: 40, marginBottom: 10 }}>IMAOS Player</h1>
+
+      <div style={{ fontSize: 22, marginBottom: 10 }}>
+        <strong>Room:</strong> {roomId}
       </div>
 
-      <div style={{ padding: 20 }}>
+      <div style={{ fontSize: 22, marginBottom: 10 }}>
+        <strong>State:</strong> {state ?? "(empty / not found)"}
+      </div>
+
+      <div style={{ fontSize: 22, marginBottom: 20 }}>
+        <strong>Playback ID:</strong> {playbackId ?? "(none)"}
+      </div>
+
+      <div style={{ fontSize: 22, marginTop: 40 }}>
         {playbackId ? (
-          <video
-            key={playbackId}
-            src={`https://stream.mux.com/${playbackId}.m3u8`}
-            autoPlay
-            controls
-            style={{ width: "100%", maxWidth: 1000 }}
-          />
+          <div>
+            <div style={{ marginBottom: 10 }}>✅ Video selected (Mux next)</div>
+            <div style={{ opacity: 0.85 }}>
+              (Once we wire Mux playback, this is where the player renders.)
+            </div>
+          </div>
         ) : (
-          <p>No video selected.</p>
+          <div style={{ fontSize: 28, marginTop: 40 }}>No video selected.</div>
         )}
       </div>
+
+      <hr style={{ margin: "40px 0", opacity: 0.3 }} />
+
+      <h2 style={{ fontSize: 22, marginBottom: 10 }}>Debug (what Supabase returned)</h2>
+
+      <div style={{ marginBottom: 14 }}>
+        <strong>Supabase error:</strong>
+        <pre style={{ whiteSpace: "pre-wrap", background: "#111", padding: 12, borderRadius: 8 }}>
+          {JSON.stringify(debugError, null, 2)}
+        </pre>
+      </div>
+
+      <div>
+        <strong>Supabase data:</strong>
+        <pre style={{ whiteSpace: "pre-wrap", background: "#111", padding: 12, borderRadius: 8 }}>
+          {JSON.stringify(debugData, null, 2)}
+        </pre>
+      </div>
+
+      <hr style={{ margin: "40px 0", opacity: 0.3 }} />
+
+      <h2 style={{ fontSize: 22, marginBottom: 10 }}>Debug (params)</h2>
+      <pre style={{ whiteSpace: "pre-wrap", background: "#111", padding: 12, borderRadius: 8 }}>
+        {JSON.stringify({ roomId }, null, 2)}
+      </pre>
     </div>
   );
 }
