@@ -78,11 +78,18 @@ export default function PlayerPage() {
   const playbackId = session?.playback_id ?? null;
   const state = session?.state ?? "idle";
 
-  // Remount the mux-player element when playback changes
+  // Remount player when playback changes
   const playerKey = useMemo(() => playbackId || "no-video", [playbackId]);
 
   return (
-    <div style={{ width: "100vw", height: "100vh", background: "black" }}>
+    <div
+      style={{
+        width: "100vw",
+        height: "100vh",
+        background: "black",
+        overflow: "hidden",
+      }}
+    >
       {playbackId ? (
         // @ts-ignore — mux-player is a custom element
         <mux-player
@@ -91,12 +98,12 @@ export default function PlayerPage() {
           stream-type="on-demand"
           autoplay={state === "playing"}
           muted
-         style={{
-  width: "100%",
-  height: "100%",
-  objectFit: "cover",
-}}
-
+          controls
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+          }}
         />
       ) : (
         <div
