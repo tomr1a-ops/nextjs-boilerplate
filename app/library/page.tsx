@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import MuxPlayer from "@mux/mux-player-react";
+import { useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 type VideoRow = {
@@ -13,7 +12,6 @@ type VideoRow = {
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  // This MUST be the publishable/anon key (browser-safe)
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
@@ -23,12 +21,23 @@ export default function LibraryPage() {
   const [err, setErr] = useState<string>("");
   const [busy, setBusy] = useState<boolean>(false);
 
-  // optional: pick which room you want to control from this page
   const roomId = "studioA";
 
+  // Load mux-player web component once
+  useEffect(() => {
+    const id = "mux-player-script";
+    if (document.getElementById(id)) return;
+
+    const s = document.createElement("script");
+    s.id = id;
+    s.src = "https://unpkg.com/@mux/mux-player";
+    s.async = true;
+    document.head.appendChild(s);
+  }, []);
+
+  // Load videos list from Supabase
   useEffect(() => {
     let alive = true;
-
     (async () => {
       setErr("");
       const { data, error } = await supabase
@@ -64,7 +73,7 @@ export default function LibraryPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           state: "playing",
-          playback_id: selected.label, // label is fine; API converts to mux id via Supabase
+          playback_id: selected.label, // label is fine; API converts via Supabase
           started_at: new Date().toISOString(),
           paused_at: null,
         }),
@@ -123,7 +132,7 @@ export default function LibraryPage() {
           minHeight: 0,
         }}
       >
-        {/* Left: video list */}
+        {/* Left list */}
         <div style={{ overflow: "auto", paddingRight: 6 }}>
           {videos.map((v) => {
             const active = selected?.label === v.label;
@@ -133,7 +142,6 @@ export default function LibraryPage() {
                 onClick={() => setSelected(v)}
                 style={{
                   width: "100%",
-                  textAlign: "center",
                   padding: "18px 12px",
                   borderRadius: 14,
                   marginBottom: 10,
@@ -155,7 +163,7 @@ export default function LibraryPage() {
           })}
         </div>
 
-        {/* Right: player */}
+        {/* Right player */}
         <div style={{ minHeight: 0 }}>
           {selected ? (
             <>
@@ -177,15 +185,15 @@ export default function LibraryPage() {
                     cursor: busy ? "wait" : "pointer",
                     opacity: busy ? 0.7 : 1,
                   }}
-                  title={`Send ${selected.label} to room ${roomId}`}
                 >
                   SET {roomId} TO THIS VIDEO
                 </button>
               </div>
 
-              <MuxPlayer
-                playbackId={selected.playback_id}
-                streamType="on-demand"
+              {/* Mux Player Web Component */}
+              <mux-player
+                playback-id={selected.playback_id}
+                stream-type="on-demand"
                 controls
                 style={{ width: "100%", height: "calc(100vh - 190px)" }}
               />
@@ -205,4 +213,3 @@ export default function LibraryPage() {
     </div>
   );
 }
-
