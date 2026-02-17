@@ -1,51 +1,90 @@
 "use client";
 
-import { useEffect, useState } from 'react';
-import { createClient } from '@/lib/supabase-browser'; // adjust path
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
+import { supabase } from "@/lib/supabase-browser";
 
-export default function PlayerPage({ params }: { params: { roomId: string } }) {
+type RoomSession = {
+  room_id: string;
+  playback_id: string | null;
+  state: string | null;
+};
+
+export default function PlayerPage() {
+  const params = useParams();
+  const roomId = params?.roomId as string;
+
   const [playbackId, setPlaybackId] = useState<string | null>(null);
-  const supabase = createClient(); // your browser client
+  const [state, setState] = useState<string | null>(null);
 
+  // Load current room state on mount
   useEffect(() => {
-    // Initial fetch
-    const fetchRoom = async () => {
-      const { data } = await supabase
-        .from('rooms') // adjust table name
-        .select('mux_playback_id')
-        .eq('id', params.roomId)
+    if (!roomId) return;
+
+    async function loadInitial() {
+      const { data, error } = await supabase
+        .from("room_sessions")
+        .select("*")
+        .eq("room_id", roomId)
         .single();
 
-      if (data?.mux_playback_id) {
-        setPlaybackId(data.mux_playback_id);
+      if (!error && data) {
+        setPlaybackId(data.playback_id);
+        setState(data.state);
       }
-    };
-    fetchRoom();
+    }
 
-    // Realtime subscription
-    const channel = supabase.channel(`room:${params.roomId}`)
-      .on('postgres_changes', 
-        { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${params.roomId}` },
+    loadInitial();
+  }, [roomId]);
+
+  // Realtime subscription
+  useEffect(() => {
+    if (!roomId) return;
+
+    const channel = supabase
+      .channel("room-" + roomId)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "room_sessions",
+          filter: `room_id=eq.${roomId}`,
+        },
         (payload) => {
-          const newId = payload.new.mux_playback_id;
-          if (newId) setPlaybackId(newId);
+          const newData = payload.new as RoomSession;
+          setPlaybackId(newData.playback_id);
+          setState(newData.state);
         }
       )
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
-  }, [params.roomId, supabase]);
-
-  if (!playbackId) return <div>Loading room {params.roomId}...</div>;
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [roomId]);
 
   return (
-    <div style={{ width: '100vw', height: '100vh', background: 'black' }}>
-      <video
-        autoPlay
-        controls
-        style={{ width: '100%', height: '100%' }}
-        src={`https://stream.mux.com/${playbackId}.m3u8`}
-      />
+    <div style={{ background: "#000", minHeight: "100vh", color: "#fff" }}>
+      <div style={{ padding: 20 }}>
+        <h1>IMA Studio Player</h1>
+        <p>Room: {roomId}</p>
+        <p>State: {state}</p>
+      </div>
+
+      <div style={{ padding: 20 }}>
+        {playbackId ? (
+          <video
+            key={playbackId}
+            src={`https://stream.mux.com/${playbackId}.m3u8`}
+            autoPlay
+            controls
+            style={{ width: "100%", maxWidth: 1000 }}
+          />
+        ) : (
+          <p>No video selected.</p>
+        )}
+      </div>
     </div>
   );
 }
