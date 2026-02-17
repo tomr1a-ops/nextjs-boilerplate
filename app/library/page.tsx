@@ -190,12 +190,17 @@ export default function LibraryPage() {
                 </button>
               </div>
 
-              {/* Mux Player Web Component */}
-              <mux-player
-                playback-id={selected.playback_id}
-                stream-type="on-demand"
-                controls
+              {/* Avoid TS/JSX typing issues by injecting the web component markup */}
+              <div
                 style={{ width: "100%", height: "calc(100vh - 190px)" }}
+                dangerouslySetInnerHTML={{
+                  __html: `<mux-player
+                    playback-id="${selected.playback_id}"
+                    stream-type="on-demand"
+                    controls
+                    style="width:100%;height:100%;"
+                  ></mux-player>`,
+                }}
               />
 
               <div style={{ marginTop: 10, fontSize: 12, opacity: 0.8 }}>
