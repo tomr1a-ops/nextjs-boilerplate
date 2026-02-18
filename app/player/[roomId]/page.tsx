@@ -1,14 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type SessionData = {
   room_id?: string;
-  playback_id?: string | null; // should be the REAL mux playback id in room_sessions
+  playback_id?: string | null; // real mux playback id
   state?: "playing" | "paused" | "stopped" | string;
-  started_at?: string | null;
-  paused_at?: string | null;
-  updated_at?: string | null;
 };
 
 function clean(v: any) {
@@ -16,8 +13,22 @@ function clean(v: any) {
 }
 
 function muxHlsUrl(playbackId: string) {
-  // Mux HLS manifest
   return `https://stream.mux.com/${playbackId}.m3u8`;
+}
+
+function loadHlsJs(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const id = "hlsjs-script";
+    if (document.getElementById(id)) return resolve();
+
+    const s = document.createElement("script");
+    s.id = id;
+    s.src = "https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js";
+    s.async = true;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error("Failed to load hls.js"));
+    document.head.appendChild(s);
+  });
 }
 
 export default function PlayerRoomPage({ params }: { params: { roomId: string } }) {
@@ -29,42 +40,27 @@ export default function PlayerRoomPage({ params }: { params: { roomId: string } 
   const [remoteState, setRemoteState] = useState<string>("loading");
   const [playbackId, setPlaybackId] = useState<string>("");
   const [err, setErr] = useState<string>("");
-
-  // Load hls.js once (CDN) for WebView/Android where native HLS is spotty
-  useEffect(() => {
-    const id = "hlsjs-script";
-    if (document.getElementById(id)) return;
-
-    const s = document.createElement("script");
-    s.id = id;
-    s.src = "https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js";
-    s.async = true;
-    document.head.appendChild(s);
-  }, []);
+  const [needsTap, setNeedsTap] = useState<boolean>(false);
+  const [hlsStatus, setHlsStatus] = useState<string>("init");
 
   async function refresh() {
     const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, { cache: "no-store" });
     if (!res.ok) return;
     const data = (await res.json()) as SessionData;
 
-    const state = clean(data.state) || "unknown";
-    const pb = clean(data.playback_id);
-
-    setRemoteState(state);
-    setPlaybackId(pb);
+    setRemoteState(clean(data.state) || "unknown");
+    setPlaybackId(clean(data.playback_id));
   }
 
-  // Poll session every 1s (we can upgrade to realtime later)
+  // poll room session
   useEffect(() => {
     let alive = true;
-
     const tick = async () => {
       try {
         if (!alive) return;
         await refresh();
       } catch {}
     };
-
     tick();
     const id = window.setInterval(tick, 1000);
     return () => {
@@ -73,79 +69,123 @@ export default function PlayerRoomPage({ params }: { params: { roomId: string } 
     };
   }, [roomId]);
 
-  // Attach playback to <video> whenever playbackId changes
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    setErr("");
-
-    // Cleanup old hls instance if any
+  // destroy helper
+  function destroyHls() {
     try {
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
       }
     } catch {}
+  }
 
-    // If stopped or no id, clear video
+  // attach HLS to video (FORCE hls.js)
+  async function attachAndPlay(forcePlay: boolean) {
+    const video = videoRef.current;
+    if (!video) return;
+
+    setErr("");
+    setNeedsTap(false);
+
     if (!playbackId || remoteState === "stopped") {
+      destroyHls();
       video.pause();
       video.removeAttribute("src");
       video.load();
+      setHlsStatus("stopped");
       return;
     }
 
     const url = muxHlsUrl(playbackId);
 
-    // @ts-ignore
-    const Hls = (window as any).Hls;
+    try {
+      setHlsStatus("loading hls.js");
+      await loadHlsJs();
 
-    // If browser supports native HLS (Safari sometimes), use it
-    const canNativeHls = video.canPlayType("application/vnd.apple.mpegurl");
-
-    const startPlayback = async () => {
-      try {
-        if (Hls && Hls.isSupported()) {
-          const hls = new Hls({
-            enableWorker: true,
-            lowLatencyMode: false,
-          });
-          hlsRef.current = hls;
-          hls.loadSource(url);
-          hls.attachMedia(video);
-        } else if (canNativeHls) {
-          video.src = url;
-        } else {
-          // Worst-case fallback: still try setting src (some WebViews play it anyway)
-          video.src = url;
-        }
-
-        // Autoplay reliably on TV: mute is key
-        video.muted = true;
-        video.playsInline = true;
-
-        // Play or pause based on state
-        if (remoteState === "paused") {
-          video.pause();
-        } else {
-          await video.play().catch(() => {});
-        }
-      } catch (e: any) {
-        setErr(e?.message || "Playback error");
+      // @ts-ignore
+      const Hls = (window as any).Hls;
+      if (!Hls || !Hls.isSupported()) {
+        // Fire TV WebView should support MSE, but if not, we’ll at least show the exact problem.
+        setHlsStatus("Hls not supported");
+        setErr("hls.js not supported in this WebView (no MSE).");
+        return;
       }
-    };
 
-    startPlayback();
+      destroyHls();
+
+      setHlsStatus("attaching");
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false,
+        backBufferLength: 30,
+      });
+
+      hlsRef.current = hls;
+
+      hls.on(Hls.Events.ERROR, (_evt: any, data: any) => {
+        const msg = `HLS error: ${data?.type || "?"} ${data?.details || "?"} fatal=${data?.fatal}`;
+        setErr(msg);
+
+        // Try to recover non-fatal errors
+        if (data?.fatal) {
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            setHlsStatus("recover network");
+            try {
+              hls.startLoad();
+            } catch {}
+          } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+            setHlsStatus("recover media");
+            try {
+              hls.recoverMediaError();
+            } catch {}
+          } else {
+            setHlsStatus("fatal");
+          }
+        }
+      });
+
+      hls.loadSource(url);
+      hls.attachMedia(video);
+
+      // Autoplay on TV: must be muted
+      video.muted = true;
+      video.playsInline = true;
+
+      setHlsStatus("ready");
+
+      if (remoteState === "paused") {
+        video.pause();
+        return;
+      }
+
+      // Try to play
+      if (forcePlay || remoteState === "playing") {
+        const p = video.play();
+        if (p && typeof (p as any).catch === "function") {
+          (p as any).catch(() => {
+            // WebView sometimes blocks autoplay until a user gesture
+            setNeedsTap(true);
+            setHlsStatus("needs tap");
+          });
+        }
+      }
+    } catch (e: any) {
+      setErr(e?.message || "Playback error");
+      setHlsStatus("error");
+    }
+  }
+
+  // re-attach whenever id/state changes
+  useEffect(() => {
+    attachAndPlay(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playbackId, remoteState]);
 
-  // React to pause/play updates
+  // Cleanup on unmount
   useEffect(() => {
-    const v = videoRef.current;
-    if (!v) return;
-    if (remoteState === "paused") v.pause();
-    if (remoteState === "playing") v.play().catch(() => {});
-  }, [remoteState]);
+    return () => destroyHls();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div
@@ -154,50 +194,75 @@ export default function PlayerRoomPage({ params }: { params: { roomId: string } 
         height: "100vh",
         background: "#000",
         overflow: "hidden",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
+        position: "relative",
+      }}
+      onClick={() => {
+        // User gesture fallback
+        if (needsTap) attachAndPlay(true);
       }}
     >
-      {/* Fullscreen video */}
       <video
         ref={videoRef}
-        autoPlay
         muted
         playsInline
         controls={false}
         style={{
           width: "100%",
           height: "100%",
-          objectFit: "contain", // portrait video on portrait TV looks correct
+          objectFit: "contain",
           background: "#000",
         }}
       />
 
-      {/* Tiny debug overlay (safe on TV) */}
+      {/* Tap overlay if autoplay blocked */}
+      {needsTap ? (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#fff",
+            fontSize: 26,
+            fontWeight: 900,
+            background: "rgba(0,0,0,0.35)",
+          }}
+        >
+          Press OK to Start
+        </div>
+      ) : null}
+
+      {/* Debug overlay */}
       <div
         style={{
           position: "fixed",
           left: 10,
           bottom: 10,
-          color: "rgba(255,255,255,0.8)",
+          color: "rgba(255,255,255,0.85)",
           fontSize: 12,
           fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
           background: "rgba(0,0,0,0.35)",
           padding: "6px 10px",
           borderRadius: 10,
+          maxWidth: "92vw",
+          lineHeight: 1.35,
         }}
       >
-        room <b>{roomId}</b> • state <b>{remoteState}</b>
+        room <b>{roomId}</b> • state <b>{remoteState}</b> • hls <b>{hlsStatus}</b>
         {playbackId ? (
           <>
             {" "}
-            • id <span style={{ fontFamily: "monospace" }}>{playbackId.slice(0, 6)}…</span>
+            • id <span style={{ fontFamily: "monospace" }}>{playbackId.slice(0, 10)}…</span>
           </>
         ) : (
           <> • no video set</>
         )}
-        {err ? <> • error: {err}</> : null}
+        {err ? (
+          <div style={{ marginTop: 6, color: "rgba(255,170,170,0.95)" }}>
+            <b>{err}</b>
+          </div>
+        ) : null}
       </div>
     </div>
   );
