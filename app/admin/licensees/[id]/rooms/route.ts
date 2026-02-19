@@ -28,13 +28,18 @@ function clean(v: any) {
   return (v ?? "").toString().trim();
 }
 
-export async function GET(
-  req: NextRequest,
-  ctx: { params: { id: string } }
-) {
+// Next.js sometimes types params as Promise<...> depending on version/tooling.
+// This helper supports both.
+async function getLicenseeId(ctx: any): Promise<string> {
+  const p = ctx?.params;
+  const obj = p && typeof p.then === "function" ? await p : p;
+  return clean(obj?.id);
+}
+
+export async function GET(req: NextRequest, ctx: any) {
   if (!requireAdmin(req)) return jsonError("Unauthorized", 401);
 
-  const licenseeId = clean(ctx.params.id);
+  const licenseeId = await getLicenseeId(ctx);
   if (!licenseeId) return jsonError("Missing licensee id", 400);
 
   const { data, error } = await supabase
@@ -52,13 +57,10 @@ export async function GET(
 }
 
 // Add one room: { room_id: "atlanta1" }
-export async function POST(
-  req: NextRequest,
-  ctx: { params: { id: string } }
-) {
+export async function POST(req: NextRequest, ctx: any) {
   if (!requireAdmin(req)) return jsonError("Unauthorized", 401);
 
-  const licenseeId = clean(ctx.params.id);
+  const licenseeId = await getLicenseeId(ctx);
   const body = await req.json().catch(() => ({}));
   const roomId = clean(body?.room_id);
 
@@ -75,13 +77,10 @@ export async function POST(
 }
 
 // Replace all rooms: { rooms: ["atlanta1","atlanta2"] }
-export async function PUT(
-  req: NextRequest,
-  ctx: { params: { id: string } }
-) {
+export async function PUT(req: NextRequest, ctx: any) {
   if (!requireAdmin(req)) return jsonError("Unauthorized", 401);
 
-  const licenseeId = clean(ctx.params.id);
+  const licenseeId = await getLicenseeId(ctx);
   const body = await req.json().catch(() => ({}));
   const rooms = Array.isArray(body?.rooms)
     ? body.rooms.map((x: any) => clean(x)).filter(Boolean)
@@ -90,7 +89,6 @@ export async function PUT(
   if (!licenseeId) return jsonError("Missing licensee id", 400);
   if (!rooms) return jsonError("Missing rooms[]", 400);
 
-  // clear existing
   const { error: delErr } = await supabase
     .from("licensee_rooms")
     .delete()
@@ -112,13 +110,10 @@ export async function PUT(
 }
 
 // Remove one room: ?room_id=atlanta1
-export async function DELETE(
-  req: NextRequest,
-  ctx: { params: { id: string } }
-) {
+export async function DELETE(req: NextRequest, ctx: any) {
   if (!requireAdmin(req)) return jsonError("Unauthorized", 401);
 
-  const licenseeId = clean(ctx.params.id);
+  const licenseeId = await getLicenseeId(ctx);
   const roomId = clean(req.nextUrl.searchParams.get("room_id"));
 
   if (!licenseeId) return jsonError("Missing licensee id", 400);
