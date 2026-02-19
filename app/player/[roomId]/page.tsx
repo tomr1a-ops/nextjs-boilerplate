@@ -41,10 +41,11 @@ export default function PlayerRoomPage({ params }: { params: { roomId: string } 
   const [playbackId, setPlaybackId] = useState<string>("");
   const [err, setErr] = useState<string>("");
   const [needsTap, setNeedsTap] = useState<boolean>(false);
-  const [hlsStatus, setHlsStatus] = useState<string>("init");
 
   async function refresh() {
-    const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, { cache: "no-store" });
+    const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, {
+      cache: "no-store",
+    });
     if (!res.ok) return;
     const data = (await res.json()) as SessionData;
 
@@ -92,28 +93,23 @@ export default function PlayerRoomPage({ params }: { params: { roomId: string } 
       video.pause();
       video.removeAttribute("src");
       video.load();
-      setHlsStatus("stopped");
       return;
     }
 
     const url = muxHlsUrl(playbackId);
 
     try {
-      setHlsStatus("loading hls.js");
       await loadHlsJs();
 
       // @ts-ignore
       const Hls = (window as any).Hls;
       if (!Hls || !Hls.isSupported()) {
-        // Fire TV WebView should support MSE, but if not, we’ll at least show the exact problem.
-        setHlsStatus("Hls not supported");
         setErr("hls.js not supported in this WebView (no MSE).");
         return;
       }
 
       destroyHls();
 
-      setHlsStatus("attaching");
       const hls = new Hls({
         enableWorker: true,
         lowLatencyMode: false,
@@ -126,20 +122,15 @@ export default function PlayerRoomPage({ params }: { params: { roomId: string } 
         const msg = `HLS error: ${data?.type || "?"} ${data?.details || "?"} fatal=${data?.fatal}`;
         setErr(msg);
 
-        // Try to recover non-fatal errors
         if (data?.fatal) {
           if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-            setHlsStatus("recover network");
             try {
               hls.startLoad();
             } catch {}
           } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-            setHlsStatus("recover media");
             try {
               hls.recoverMediaError();
             } catch {}
-          } else {
-            setHlsStatus("fatal");
           }
         }
       });
@@ -151,27 +142,21 @@ export default function PlayerRoomPage({ params }: { params: { roomId: string } 
       video.muted = true;
       video.playsInline = true;
 
-      setHlsStatus("ready");
-
       if (remoteState === "paused") {
         video.pause();
         return;
       }
 
-      // Try to play
       if (forcePlay || remoteState === "playing") {
         const p = video.play();
         if (p && typeof (p as any).catch === "function") {
           (p as any).catch(() => {
-            // WebView sometimes blocks autoplay until a user gesture
             setNeedsTap(true);
-            setHlsStatus("needs tap");
           });
         }
       }
     } catch (e: any) {
       setErr(e?.message || "Playback error");
-      setHlsStatus("error");
     }
   }
 
@@ -195,9 +180,17 @@ export default function PlayerRoomPage({ params }: { params: { roomId: string } 
         background: "#000",
         overflow: "hidden",
         position: "relative",
+        padding: 0,
+        margin: 0,
       }}
       onClick={() => {
-        // User gesture fallback
+        // Optional: try fullscreen on first OK/click (works in some Fire TV browsers)
+        const el = document.documentElement as any;
+        if (!document.fullscreenElement && el?.requestFullscreen) {
+          el.requestFullscreen().catch(() => {});
+        }
+
+        // User gesture fallback for autoplay blocks
         if (needsTap) attachAndPlay(true);
       }}
     >
@@ -207,9 +200,11 @@ export default function PlayerRoomPage({ params }: { params: { roomId: string } 
         playsInline
         controls={false}
         style={{
-          width: "100%",
-          height: "100%",
-          objectFit: "contain",
+          position: "fixed",
+          inset: 0,
+          width: "100vw",
+          height: "100vh",
+          objectFit: "cover",
           background: "#000",
         }}
       />
@@ -233,37 +228,26 @@ export default function PlayerRoomPage({ params }: { params: { roomId: string } 
         </div>
       ) : null}
 
-      {/* Debug overlay */}
-      <div
-        style={{
-          position: "fixed",
-          left: 10,
-          bottom: 10,
-          color: "rgba(255,255,255,0.85)",
-          fontSize: 12,
-          fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
-          background: "rgba(0,0,0,0.35)",
-          padding: "6px 10px",
-          borderRadius: 10,
-          maxWidth: "92vw",
-          lineHeight: 1.35,
-        }}
-      >
-        room <b>{roomId}</b> • state <b>{remoteState}</b> • hls <b>{hlsStatus}</b>
-        {playbackId ? (
-          <>
-            {" "}
-            • id <span style={{ fontFamily: "monospace" }}>{playbackId.slice(0, 10)}…</span>
-          </>
-        ) : (
-          <> • no video set</>
-        )}
-        {err ? (
-          <div style={{ marginTop: 6, color: "rgba(255,170,170,0.95)" }}>
-            <b>{err}</b>
-          </div>
-        ) : null}
-      </div>
+      {/* Optional: keep errors only (no room/state debug) */}
+      {err ? (
+        <div
+          style={{
+            position: "fixed",
+            left: 10,
+            bottom: 10,
+            color: "rgba(255,170,170,0.95)",
+            fontSize: 12,
+            fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+            background: "rgba(0,0,0,0.35)",
+            padding: "6px 10px",
+            borderRadius: 10,
+            maxWidth: "92vw",
+            lineHeight: 1.35,
+          }}
+        >
+          <b>{err}</b>
+        </div>
+      ) : null}
     </div>
   );
 }
