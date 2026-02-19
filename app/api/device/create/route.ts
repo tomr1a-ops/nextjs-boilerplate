@@ -28,6 +28,7 @@ export async function POST(request: Request) {
   const room_id = clean((body as any).room_id) || "studioA";
   const name = clean((body as any).name) || room_id;
 
+  // Generate a unique pairing code
   let pairing_code = "";
   for (let i = 0; i < 10; i++) {
     const candidate = makePairingCode();
@@ -51,7 +52,13 @@ export async function POST(request: Request) {
   }
 
   const device_token = makeToken();
+  const nowIso = new Date().toISOString();
 
+  /**
+   * NOTE:
+   * Your existing devices table has NOT NULL constraints on some legacy columns
+   * like `action`, so we must provide real values (not null).
+   */
   const { data, error } = await supabase
     .from("devices")
     .upsert(
@@ -63,9 +70,11 @@ export async function POST(request: Request) {
         is_paired: false,
         active: true,
         last_seen: null,
-        action: null,
-        current_video: null,
-        action_at: null,
+
+        // legacy columns (avoid NOT NULL violations)
+        action: "idle",
+        current_video: "",
+        action_at: nowIso,
       },
       { onConflict: "room_id" }
     )
@@ -73,10 +82,7 @@ export async function POST(request: Request) {
     .single();
 
   if (error) {
-    return NextResponse.json(
-      { error: error.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
   return NextResponse.json({
@@ -85,4 +91,3 @@ export async function POST(request: Request) {
     pairing_code: data.pairing_code,
   });
 }
-
