@@ -15,14 +15,25 @@ type SessionData = {
   playback_id?: string | null;
   state?: "playing" | "paused" | "stopped" | string;
   updated_at?: string | null;
+
+  // legacy (you had this)
   seek_seconds?: number | null;
+
+  // NEW (optional): one-time command model fields
+  command_id?: number | null;
+  command_type?: string | null;
+  command_value?: number | null;
 };
 
 function clean(v: any) {
   return (v ?? "").toString().trim();
 }
 
-export default function ControlRoomPage({ params }: { params: { roomId: string } }) {
+export default function ControlRoomPage({
+  params,
+}: {
+  params: { roomId: string };
+}) {
   const roomId = clean(params.roomId) || "studioA";
 
   const [videos, setVideos] = useState<VideoRow[]>([]);
@@ -31,7 +42,7 @@ export default function ControlRoomPage({ params }: { params: { roomId: string }
   const [remotePlaybackId, setRemotePlaybackId] = useState<string>("");
   const [err, setErr] = useState<string>("");
 
-  // NEW: visual feedback for FF/RW
+  // visual feedback for FF/RW
   const [flash, setFlash] = useState<"rw" | "ff" | null>(null);
 
   async function loadVideos() {
@@ -44,7 +55,10 @@ export default function ControlRoomPage({ params }: { params: { roomId: string }
   }
 
   async function loadSession() {
-    const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, { cache: "no-store" });
+    const res = await fetch(
+      `/api/session?room=${encodeURIComponent(roomId)}`,
+      { cache: "no-store" }
+    );
     if (!res.ok) return;
     const data = (await res.json()) as SessionData;
     setRemoteState(clean(data.state) || "unknown");
@@ -151,17 +165,21 @@ export default function ControlRoomPage({ params }: { params: { roomId: string }
     });
   }
 
-  // Assumes your /api/session supports seek_seconds (you already have the column)
+  /**
+   * FF/RW: one-time command model.
+   * Requires /api/session to accept:
+   * { command: "seek_delta", value: +10 } or -10
+   *
+   * This avoids "re-seek every poll" bugs.
+   */
   async function seekDelta(deltaSeconds: number) {
     const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
       body: JSON.stringify({
-        // keep whatever state you are in; player will stay playing/paused
-        state: remoteState,
-        playback_id: remotePlaybackId || null,
-        seek_seconds: deltaSeconds, // <-- player should interpret as +/- seconds jump
+        command: "seek_delta",
+        value: deltaSeconds, // +10 / -10
       }),
     });
 
@@ -174,6 +192,11 @@ export default function ControlRoomPage({ params }: { params: { roomId: string }
         throw new Error(text || `seek failed ${res.status}`);
       }
     }
+
+    // refresh immediately so UI stays in sync
+    try {
+      await loadSession();
+    } catch {}
   }
 
   async function handleSeek(delta: number, type: "rw" | "ff") {
@@ -199,7 +222,14 @@ export default function ControlRoomPage({ params }: { params: { roomId: string }
       }}
     >
       <div style={{ maxWidth: 980, margin: "0 auto" }}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 12,
+            alignItems: "center",
+          }}
+        >
           <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900, letterSpacing: 0.2 }}>
             IMAOS Control — <span style={{ opacity: 0.85 }}>{roomId}</span>
           </h1>
@@ -277,7 +307,7 @@ export default function ControlRoomPage({ params }: { params: { roomId: string }
             STOP
           </button>
 
-          {/* NEW: RW / FF with flash feedback */}
+          {/* RW / FF with flash feedback */}
           <button
             onClick={() => handleSeek(-10, "rw")}
             style={{
@@ -365,8 +395,12 @@ export default function ControlRoomPage({ params }: { params: { roomId: string }
                 style={{
                   padding: "14px 12px",
                   borderRadius: 16,
-                  border: isActive ? "2px solid rgba(0,255,140,0.75)" : "1px solid rgba(255,255,255,0.12)",
-                  background: isActive ? "rgba(0,255,140,0.12)" : "rgba(255,255,255,0.06)",
+                  border: isActive
+                    ? "2px solid rgba(0,255,140,0.75)"
+                    : "1px solid rgba(255,255,255,0.12)",
+                  background: isActive
+                    ? "rgba(0,255,140,0.12)"
+                    : "rgba(255,255,255,0.06)",
                   color: "#fff",
                   fontWeight: 950,
                   letterSpacing: 0.3,
