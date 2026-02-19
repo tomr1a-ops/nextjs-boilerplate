@@ -1,288 +1,309 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
-
-type VideoRow = {
-  label: string;
-  playback_id: string;
-  sort_order: number;
-  active: boolean;
-};
 
 type SessionData = {
   room_id?: string;
-  playback_id?: string | null; // NOTE: in your DB this is the REAL mux playback id after normalization
+  playback_id?: string | null;
   state?: "playing" | "paused" | "stopped" | string;
-  started_at?: string | null;
-  paused_at?: string | null;
-  updated_at?: string | null;
+  seek_seconds?: number | null;
 };
-
-export const dynamic = "force-dynamic";
 
 function clean(v: any) {
   return (v ?? "").toString().trim();
 }
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! // sb_publishable_...
-);
+function muxHlsUrl(playbackId: string) {
+  return `https://stream.mux.com/${playbackId}.m3u8`;
+}
 
-export default function Home() {
-  // For now, keep your test room fixed.
-  // Later we’ll make this dynamic (/controller/[roomId]).
-  const roomId = "studioA";
+function loadHlsJs(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const id = "hlsjs-script";
+    if (document.getElementById(id)) return resolve();
 
-  const [videos, setVideos] = useState<VideoRow[]>([]);
+    const s = document.createElement("script");
+    s.id = id;
+    s.src = "https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js";
+    s.async = true;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error("Failed to load hls.js"));
+    document.head.appendChild(s);
+  });
+}
+
+export default function PlayerRoomPage({ params }: { params: { roomId: string } }) {
+  const roomId = clean(params.roomId) || "studioA";
+
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const hlsRef = useRef<any>(null);
+
+  const lastSeekRef = useRef<number>(0);
+
   const [remoteState, setRemoteState] = useState<string>("loading");
-  const [sessionPlaybackId, setSessionPlaybackId] = useState<string>(""); // real mux id
-  const [busy, setBusy] = useState<boolean>(false);
+  const [playbackId, setPlaybackId] = useState<string>("");
+  const [seekCounter, setSeekCounter] = useState<number>(0);
+
   const [err, setErr] = useState<string>("");
-
-  // avoid re-applying same state endlessly
-  const lastSeen = useRef<string>("");
-
-  // Load the 15 videos from Supabase (and any future ones you add)
-  useEffect(() => {
-    let alive = true;
-
-    (async () => {
-      setErr("");
-      const { data, error } = await supabase
-        .from("videos")
-        .select("label, playback_id, sort_order, active")
-        .eq("active", true)
-        .order("sort_order", { ascending: true });
-
-      if (!alive) return;
-
-      if (error) {
-        setErr(`Videos load failed: ${error.message}`);
-        return;
-      }
-
-      setVideos((data || []) as VideoRow[]);
-    })();
-
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  async function postSession(update: Partial<SessionData>) {
-    const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(update),
-    });
-
-    if (!res.ok) {
-      const txt = await res.text().catch(() => "");
-      throw new Error(`POST /api/session failed (${res.status}) ${txt}`);
-    }
-
-    const data = (await res.json().catch(() => null)) as SessionData | null;
-    return data;
-  }
+  const [needsTap, setNeedsTap] = useState<boolean>(false);
+  const [hlsStatus, setHlsStatus] = useState<string>("init");
 
   async function refresh() {
-    const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, {
-      cache: "no-store",
-    });
+    const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, { cache: "no-store" });
     if (!res.ok) return;
-
     const data = (await res.json()) as SessionData;
 
-    const state = clean(data.state) || "unknown";
-    const pb = clean(data.playback_id); // real mux id in room_sessions after your normalization
-
-    setRemoteState(state);
-    setSessionPlaybackId(pb);
-
-    const stamp = `${state}:${pb}`;
-    lastSeen.current = stamp;
+    setRemoteState(clean(data.state) || "unknown");
+    setPlaybackId(clean(data.playback_id));
+    setSeekCounter(typeof data.seek_seconds === "number" ? data.seek_seconds : 0);
   }
 
-  // poll every 1s (we can upgrade to realtime later)
+  // poll room session
   useEffect(() => {
     let alive = true;
-
     const tick = async () => {
       try {
         if (!alive) return;
         await refresh();
-      } catch {
-        // ignore transient errors
-      }
+      } catch {}
     };
-
     tick();
     const id = window.setInterval(tick, 1000);
     return () => {
       alive = false;
       window.clearInterval(id);
     };
+  }, [roomId]);
+
+  // destroy helper
+  function destroyHls() {
+    try {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+    } catch {}
+  }
+
+  // apply seek delta when seekCounter changes
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const prev = lastSeekRef.current || 0;
+    const next = Number.isFinite(seekCounter) ? seekCounter : 0;
+    const delta = next - prev;
+
+    // store immediately so repeated renders don't reapply
+    lastSeekRef.current = next;
+
+    if (!delta) return;
+
+    const doSeek = () => {
+      try {
+        const current = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+        const target = Math.max(0, current + delta);
+        video.currentTime = target;
+      } catch {}
+    };
+
+    // If metadata not ready, wait a beat
+    if (video.readyState >= 1) {
+      doSeek();
+    } else {
+      const onMeta = () => {
+        doSeek();
+        video.removeEventListener("loadedmetadata", onMeta);
+      };
+      video.addEventListener("loadedmetadata", onMeta);
+      // fallback
+      setTimeout(() => {
+        try {
+          doSeek();
+        } catch {}
+      }, 500);
+    }
+  }, [seekCounter]);
+
+  // attach HLS to video (FORCE hls.js)
+  async function attachAndPlay(forcePlay: boolean) {
+    const video = videoRef.current;
+    if (!video) return;
+
+    setErr("");
+    setNeedsTap(false);
+
+    if (!playbackId || remoteState === "stopped") {
+      destroyHls();
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+      setHlsStatus("stopped");
+      return;
+    }
+
+    const url = muxHlsUrl(playbackId);
+
+    try {
+      setHlsStatus("loading hls.js");
+      await loadHlsJs();
+
+      // @ts-ignore
+      const Hls = (window as any).Hls;
+      if (!Hls || !Hls.isSupported()) {
+        setHlsStatus("Hls not supported");
+        setErr("hls.js not supported in this WebView (no MSE).");
+        return;
+      }
+
+      destroyHls();
+
+      setHlsStatus("attaching");
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false,
+        backBufferLength: 30,
+      });
+
+      hlsRef.current = hls;
+
+      hls.on(Hls.Events.ERROR, (_evt: any, data: any) => {
+        const msg = `HLS error: ${data?.type || "?"} ${data?.details || "?"} fatal=${data?.fatal}`;
+        setErr(msg);
+
+        if (data?.fatal) {
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            setHlsStatus("recover network");
+            try {
+              hls.startLoad();
+            } catch {}
+          } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+            setHlsStatus("recover media");
+            try {
+              hls.recoverMediaError();
+            } catch {}
+          } else {
+            setHlsStatus("fatal");
+          }
+        }
+      });
+
+      hls.loadSource(url);
+      hls.attachMedia(video);
+
+      video.muted = true;
+      video.playsInline = true;
+
+      setHlsStatus("ready");
+
+      if (remoteState === "paused") {
+        video.pause();
+        return;
+      }
+
+      if (forcePlay || remoteState === "playing") {
+        const p = video.play();
+        if (p && typeof (p as any).catch === "function") {
+          (p as any).catch(() => {
+            setNeedsTap(true);
+            setHlsStatus("needs tap");
+          });
+        }
+      }
+    } catch (e: any) {
+      setErr(e?.message || "Playback error");
+      setHlsStatus("error");
+    }
+  }
+
+  // re-attach whenever id/state changes
+  useEffect(() => {
+    attachAndPlay(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playbackId, remoteState]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => destroyHls();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  async function handlePick(label: string) {
-    setErr("");
-    setBusy(true);
-    try {
-      // IMPORTANT: send the LABEL, not mux id.
-      // Your /api/session route converts label -> mux id using Supabase videos table.
-      await postSession({
-        state: "playing",
-        playback_id: label,
-        started_at: new Date().toISOString(),
-        paused_at: null,
-      });
-
-      await refresh();
-    } catch (e: any) {
-      setErr(e?.message || "Unknown error");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleStop() {
-    setErr("");
-    setBusy(true);
-    try {
-      await postSession({
-        state: "stopped",
-        playback_id: null,
-        started_at: null,
-        paused_at: null,
-      });
-      await refresh();
-    } catch (e: any) {
-      setErr(e?.message || "Unknown error");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  // Determine which label is currently playing by matching the session mux id to videos table
-  const currentLabel =
-    sessionPlaybackId &&
-    videos.find((v) => clean(v.playback_id) === clean(sessionPlaybackId))?.label;
 
   return (
     <div
       style={{
-        minHeight: "100vh",
+        width: "100vw",
+        height: "100vh",
         background: "#000",
-        color: "#fff",
-        padding: 18,
-        display: "flex",
-        flexDirection: "column",
-        gap: 14,
+        overflow: "hidden",
+        position: "relative",
+      }}
+      onClick={() => {
+        if (needsTap) attachAndPlay(true);
       }}
     >
-      {/* Top bar */}
-      <div
+      <video
+        ref={videoRef}
+        muted
+        playsInline
+        controls={false}
         style={{
-          display: "flex",
-          alignItems: "baseline",
-          justifyContent: "space-between",
-          gap: 12,
-          flexWrap: "wrap",
+          width: "100%",
+          height: "100%",
+          objectFit: "contain",
+          background: "#000",
         }}
-      >
-        <div style={{ fontSize: 20, fontWeight: 800 }}>IMAOS Room Controller</div>
+      />
 
-        <div style={{ fontSize: 14, opacity: 0.85 }}>
-          room: <b>{roomId}</b> • state: <b>{remoteState}</b>
-          {currentLabel ? (
-            <>
-              {" "}
-              • now: <b>{currentLabel}</b>
-            </>
-          ) : null}
-        </div>
-      </div>
-
-      {err ? (
+      {needsTap ? (
         <div
           style={{
-            border: "1px solid rgba(255,255,255,0.2)",
-            background: "rgba(255,0,0,0.12)",
-            padding: 12,
-            borderRadius: 12,
-            fontSize: 13,
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#fff",
+            fontSize: 26,
+            fontWeight: 900,
+            background: "rgba(0,0,0,0.35)",
           }}
         >
-          <b>Error:</b> {err}
+          Press OK to Start
         </div>
       ) : null}
 
-      {/* Buttons grid */}
+      {/* (Optional) keep or remove debug overlay later */}
       <div
         style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 14,
-          flex: 1,
+          position: "fixed",
+          left: 10,
+          bottom: 10,
+          color: "rgba(255,255,255,0.85)",
+          fontSize: 12,
+          fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+          background: "rgba(0,0,0,0.25)",
+          padding: "6px 10px",
+          borderRadius: 10,
+          maxWidth: "92vw",
+          lineHeight: 1.35,
         }}
       >
-        {videos.map((v) => {
-          const isActive = currentLabel === v.label && remoteState === "playing";
-          return (
-            <button
-              key={v.label}
-              onClick={() => handlePick(v.label)}
-              disabled={busy}
-              style={{
-                width: "100%",
-                padding: "18px 12px",
-                borderRadius: 14,
-                border: isActive
-                  ? "2px solid rgba(255,255,255,0.9)"
-                  : "1px solid rgba(255,255,255,0.15)",
-                backgroundColor: "#16a34a",
-                color: "#000",
-                fontWeight: 900,
-                letterSpacing: 0.6,
-                fontSize: 16,
-                cursor: busy ? "wait" : "pointer",
-                opacity: busy ? 0.7 : 1,
-              }}
-            >
-              {v.label}
-            </button>
-          );
-        })}
-
-        {!videos.length ? (
-          <div style={{ gridColumn: "1 / -1", opacity: 0.8, fontSize: 13 }}>
-            Loading videos… (If this never loads, check NEXT_PUBLIC_SUPABASE_ANON_KEY and
-            RLS policy on public.videos)
+        room <b>{roomId}</b> • state <b>{remoteState}</b> • hls <b>{hlsStatus}</b> • seek{" "}
+        <b>{seekCounter}</b>
+        {playbackId ? (
+          <>
+            {" "}
+            • id <span style={{ fontFamily: "monospace" }}>{playbackId.slice(0, 10)}…</span>
+          </>
+        ) : (
+          <> • no video set</>
+        )}
+        {err ? (
+          <div style={{ marginTop: 6, color: "rgba(255,170,170,0.95)" }}>
+            <b>{err}</b>
           </div>
         ) : null}
       </div>
-
-      {/* Stop */}
-      <button
-        onClick={handleStop}
-        disabled={busy}
-        style={{
-          width: "100%",
-          padding: "18px 12px",
-          borderRadius: 14,
-          border: "1px solid rgba(255,255,255,0.18)",
-          backgroundColor: "#374151",
-          color: "#fff",
-          fontWeight: 900,
-          letterSpacing: 1,
-          cursor: busy ? "wait" : "pointer",
-          opacity: busy ? 0.7 : 1,
-        }}
-      >
-        STOP
-      </button>
     </div>
   );
 }
