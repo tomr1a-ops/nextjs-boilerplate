@@ -28,13 +28,17 @@ function clean(v: any) {
   return (v ?? "").toString().trim();
 }
 
-export async function GET(
-  req: NextRequest,
-  ctx: { params: { id: string } }
-) {
+// Supports Next versions where params may be Promise-wrapped
+async function getLicenseeId(ctx: any): Promise<string> {
+  const p = ctx?.params;
+  const obj = p && typeof p.then === "function" ? await p : p;
+  return clean(obj?.id);
+}
+
+export async function GET(req: NextRequest, ctx: any) {
   if (!requireAdmin(req)) return jsonError("Unauthorized", 401);
 
-  const licenseeId = clean(ctx.params.id);
+  const licenseeId = await getLicenseeId(ctx);
   if (!licenseeId) return jsonError("Missing licensee id", 400);
 
   const { data, error } = await supabase
@@ -52,13 +56,10 @@ export async function GET(
 }
 
 // Add one label: { video_label: "A1V1" }
-export async function POST(
-  req: NextRequest,
-  ctx: { params: { id: string } }
-) {
+export async function POST(req: NextRequest, ctx: any) {
   if (!requireAdmin(req)) return jsonError("Unauthorized", 401);
 
-  const licenseeId = clean(ctx.params.id);
+  const licenseeId = await getLicenseeId(ctx);
   const body = await req.json().catch(() => ({}));
   const videoLabel = clean(body?.video_label).toUpperCase();
 
@@ -75,13 +76,10 @@ export async function POST(
 }
 
 // Replace all labels: { video_labels: ["A1V1","A1V2"] }
-export async function PUT(
-  req: NextRequest,
-  ctx: { params: { id: string } }
-) {
+export async function PUT(req: NextRequest, ctx: any) {
   if (!requireAdmin(req)) return jsonError("Unauthorized", 401);
 
-  const licenseeId = clean(ctx.params.id);
+  const licenseeId = await getLicenseeId(ctx);
   const body = await req.json().catch(() => ({}));
   const labels = Array.isArray(body?.video_labels)
     ? body.video_labels
@@ -116,13 +114,10 @@ export async function PUT(
 }
 
 // Remove one label: ?video_label=A1V1
-export async function DELETE(
-  req: NextRequest,
-  ctx: { params: { id: string } }
-) {
+export async function DELETE(req: NextRequest, ctx: any) {
   if (!requireAdmin(req)) return jsonError("Unauthorized", 401);
 
-  const licenseeId = clean(ctx.params.id);
+  const licenseeId = await getLicenseeId(ctx);
   const videoLabel = clean(req.nextUrl.searchParams.get("video_label")).toUpperCase();
 
   if (!licenseeId) return jsonError("Missing licensee id", 400);
