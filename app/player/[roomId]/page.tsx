@@ -1,13 +1,25 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+
+type VideoRow = {
+  id: string;
+  label: string;
+  playback_id: string;
+  sort_order: number | null;
+  active: boolean;
+};
 
 type SessionData = {
   room_id?: string;
-  playback_id?: string | null; // real mux playback id
+  playback_id?: string | null;
   state?: "playing" | "paused" | "stopped" | string;
+  updated_at?: string | null;
 
-  // One-time command model (for FF/RW)
+  // legacy
+  seek_seconds?: number | null;
+
+  // command model (optional)
   command_id?: number | null;
   command_type?: string | null;
   command_value?: number | null;
@@ -17,101 +29,56 @@ function clean(v: any) {
   return (v ?? "").toString().trim();
 }
 
-function muxHlsUrl(playbackId: string) {
-  return `https://stream.mux.com/${playbackId}.m3u8`;
-}
-
-function loadHlsJs(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const id = "hlsjs-script";
-    if (document.getElementById(id)) return resolve();
-
-    const s = document.createElement("script");
-    s.id = id;
-    s.src = "https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js";
-    s.async = true;
-    s.onload = () => resolve();
-    s.onerror = () => reject(new Error("Failed to load hls.js"));
-    document.head.appendChild(s);
-  });
-}
-
-export default function PlayerRoomPage({
+export default function ControlRoomPage({
   params,
 }: {
   params: { roomId: string };
 }) {
   const roomId = clean(params.roomId) || "studioA";
 
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const hlsRef = useRef<any>(null);
-
+  const [videos, setVideos] = useState<VideoRow[]>([]);
+  const [search, setSearch] = useState("");
   const [remoteState, setRemoteState] = useState<string>("loading");
-  const [playbackId, setPlaybackId] = useState<string>("");
+  const [remotePlaybackId, setRemotePlaybackId] = useState<string>("");
   const [err, setErr] = useState<string>("");
-  const [needsTap, setNeedsTap] = useState<boolean>(false);
 
-  // NEW: one-time command application tracking
-  const lastAppliedCommandIdRef = useRef<number>(-1);
+  // visual feedback
+  const [flash, setFlash] = useState<"rw" | "ff" | null>(null);
 
-  // NEW: if seek happens before metadata is ready, queue it and apply on loadedmetadata
-  const pendingSeekDeltaRef = useRef<number>(0);
+  // press-and-hold repeat timer
+  const holdTimerRef = useRef<number | null>(null);
+  const holdingRef = useRef<"rw" | "ff" | null>(null);
 
-  function applySeekDelta(deltaSeconds: number) {
-    const video = videoRef.current;
-    if (!video) return;
+  const TAP_SECONDS = 10; // tap jump size
+  const HOLD_INTERVAL_MS = 200; // repeat speed while holding
 
-    // If metadata isn't ready, queue it
-    if (!Number.isFinite(video.duration) || video.readyState < 1) {
-      pendingSeekDeltaRef.current += deltaSeconds;
-      return;
-    }
-
-    const current = Number.isFinite(video.currentTime) ? video.currentTime : 0;
-    const next = Math.max(0, current + deltaSeconds);
-    try {
-      video.currentTime = next;
-    } catch {
-      // If it fails (some webviews), queue and retry after metadata
-      pendingSeekDeltaRef.current += deltaSeconds;
-    }
+  async function loadVideos() {
+    setErr("");
+    const qs = search ? `?search=${encodeURIComponent(search)}` : "";
+    const res = await fetch(`/api/videos${qs}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`videos failed: ${res.status}`);
+    const data = await res.json();
+    setVideos((data?.videos ?? []) as VideoRow[]);
   }
 
-  async function refresh() {
-    const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, {
-      cache: "no-store",
-    });
+  async function loadSession() {
+    const res = await fetch(
+      `/api/session?room=${encodeURIComponent(roomId)}`,
+      { cache: "no-store" }
+    );
     if (!res.ok) return;
     const data = (await res.json()) as SessionData;
-
-    const state = clean(data.state) || "unknown";
-    const pb = clean(data.playback_id);
-
-    setRemoteState(state);
-    setPlaybackId(pb);
-
-    // NEW: Apply seek command ONCE per new command_id
-    const cmdId = Number(data.command_id ?? -1);
-    if (Number.isFinite(cmdId) && cmdId >= 0 && cmdId !== lastAppliedCommandIdRef.current) {
-      lastAppliedCommandIdRef.current = cmdId;
-
-      const cmdType = clean(data.command_type);
-      const cmdValue = Number(data.command_value ?? 0);
-
-      if (cmdType === "seek_delta" && Number.isFinite(cmdValue) && cmdValue !== 0) {
-        // Only makes sense if we have a playback loaded (or about to)
-        applySeekDelta(cmdValue);
-      }
-    }
+    setRemoteState(clean(data.state) || "unknown");
+    setRemotePlaybackId(clean(data.playback_id));
   }
 
-  // poll room session
+  // Initial + polling session
   useEffect(() => {
     let alive = true;
     const tick = async () => {
+      if (!alive) return;
       try {
-        if (!alive) return;
-        await refresh();
+        await loadSession();
       } catch {}
     };
     tick();
@@ -122,204 +89,395 @@ export default function PlayerRoomPage({
     };
   }, [roomId]);
 
-  // When metadata loads, apply any queued seek deltas
+  // Load videos initially + when search changes (debounced)
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    const onLoadedMetadata = () => {
-      const queued = pendingSeekDeltaRef.current;
-      if (queued !== 0) {
-        pendingSeekDeltaRef.current = 0;
-        applySeekDelta(queued);
+    let alive = true;
+    const t = window.setTimeout(async () => {
+      if (!alive) return;
+      try {
+        await loadVideos();
+      } catch (e: any) {
+        setErr(e?.message || "Failed to load videos");
       }
-    };
-
-    video.addEventListener("loadedmetadata", onLoadedMetadata);
+    }, 200);
     return () => {
-      video.removeEventListener("loadedmetadata", onLoadedMetadata);
+      alive = false;
+      window.clearTimeout(t);
     };
+  }, [search]);
+
+  // Cleanup: stop hold timer on unmount
+  useEffect(() => {
+    return () => stopHold();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // destroy helper
-  function destroyHls() {
-    try {
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-        hlsRef.current = null;
+  const nowLabel = useMemo(() => {
+    if (!remotePlaybackId) return "";
+    const v = videos.find((x) => x.playback_id === remotePlaybackId);
+    return v?.label || "";
+  }, [remotePlaybackId, videos]);
+
+  async function setSession(payload: any) {
+    setErr("");
+    const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify(payload),
+    });
+
+    const text = await res.text();
+    if (!res.ok) {
+      try {
+        const j = JSON.parse(text);
+        throw new Error(j?.error || `session failed ${res.status}`);
+      } catch {
+        throw new Error(text || `session failed ${res.status}`);
       }
+    }
+
+    // refresh immediately
+    try {
+      await loadSession();
     } catch {}
   }
 
-  // attach HLS to video (FORCE hls.js)
-  async function attachAndPlay(forcePlay: boolean) {
-    const video = videoRef.current;
-    if (!video) return;
+  async function playVideo(v: VideoRow) {
+    await setSession({
+      state: "playing",
+      playback_id: v.playback_id,
+      started_at: new Date().toISOString(),
+      paused_at: null,
+    });
+  }
 
-    setErr("");
-    setNeedsTap(false);
+  async function pause() {
+    await setSession({
+      state: "paused",
+      playback_id: remotePlaybackId || null,
+      paused_at: new Date().toISOString(),
+    });
+  }
 
-    if (!playbackId || remoteState === "stopped") {
-      destroyHls();
-      video.pause();
-      video.removeAttribute("src");
-      video.load();
-      return;
-    }
+  async function resume() {
+    await setSession({
+      state: "playing",
+      playback_id: remotePlaybackId || null,
+      started_at: new Date().toISOString(),
+      paused_at: null,
+    });
+  }
 
-    const url = muxHlsUrl(playbackId);
+  async function stop() {
+    stopHold();
+    await setSession({
+      state: "stopped",
+      playback_id: null,
+      paused_at: null,
+      seek_seconds: null,
+    });
+  }
 
-    try {
-      await loadHlsJs();
+  /**
+   * One-time seek command.
+   * Requires /api/session to accept:
+   * { command: "seek_delta", value: +10 } or -10
+   */
+  async function seekDelta(deltaSeconds: number) {
+    const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify({
+        command: "seek_delta",
+        value: deltaSeconds,
+      }),
+    });
 
-      // @ts-ignore
-      const Hls = (window as any).Hls;
-      if (!Hls || !Hls.isSupported()) {
-        setErr("hls.js not supported in this WebView (no MSE).");
-        return;
+    const text = await res.text();
+    if (!res.ok) {
+      try {
+        const j = JSON.parse(text);
+        throw new Error(j?.error || `seek failed ${res.status}`);
+      } catch {
+        throw new Error(text || `seek failed ${res.status}`);
       }
-
-      destroyHls();
-
-      const hls = new Hls({
-        enableWorker: true,
-        lowLatencyMode: false,
-        backBufferLength: 30,
-      });
-
-      hlsRef.current = hls;
-
-      hls.on(Hls.Events.ERROR, (_evt: any, data: any) => {
-        const msg = `HLS error: ${data?.type || "?"} ${data?.details || "?"} fatal=${data?.fatal}`;
-        setErr(msg);
-
-        if (data?.fatal) {
-          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-            try {
-              hls.startLoad();
-            } catch {}
-          } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-            try {
-              hls.recoverMediaError();
-            } catch {}
-          }
-        }
-      });
-
-      hls.loadSource(url);
-      hls.attachMedia(video);
-
-      // Autoplay on TV: must be muted
-      video.muted = true;
-      video.playsInline = true;
-
-      if (remoteState === "paused") {
-        video.pause();
-        return;
-      }
-
-      if (forcePlay || remoteState === "playing") {
-        const p = video.play();
-        if (p && typeof (p as any).catch === "function") {
-          (p as any).catch(() => {
-            setNeedsTap(true);
-          });
-        }
-      }
-    } catch (e: any) {
-      setErr(e?.message || "Playback error");
     }
   }
 
-  // re-attach whenever id/state changes
-  useEffect(() => {
-    attachAndPlay(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playbackId, remoteState]);
+  function stopHold() {
+    if (holdTimerRef.current !== null) {
+      window.clearInterval(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+    holdingRef.current = null;
+    setFlash(null);
+  }
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => destroyHls();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  async function tapSeek(deltaSeconds: number, type: "rw" | "ff") {
+    setErr("");
+    setFlash(type);
+    try {
+      await seekDelta(deltaSeconds);
+    } catch (e: any) {
+      setErr(e?.message || "Seek failed");
+    } finally {
+      window.setTimeout(() => setFlash(null), 250);
+    }
+  }
+
+  function startHold(type: "rw" | "ff") {
+    // If already holding, ignore
+    if (holdTimerRef.current !== null) return;
+
+    setErr("");
+    holdingRef.current = type;
+    setFlash(type);
+
+    const delta = type === "rw" ? -TAP_SECONDS : TAP_SECONDS;
+
+    // Fire immediately once
+    seekDelta(delta).catch((e: any) => setErr(e?.message || "Seek failed"));
+
+    // Then repeat fast
+    holdTimerRef.current = window.setInterval(() => {
+      // if stopped holding, bail
+      if (!holdingRef.current) return;
+      seekDelta(delta).catch((e: any) => setErr(e?.message || "Seek failed"));
+    }, HOLD_INTERVAL_MS);
+  }
+
+  function onSeekPointerDown(e: React.PointerEvent, type: "rw" | "ff") {
+    e.preventDefault();
+    (e.currentTarget as any).setPointerCapture?.(e.pointerId);
+    startHold(type);
+  }
+
+  function onSeekPointerUp(e: React.PointerEvent) {
+    e.preventDefault();
+    stopHold();
+  }
+
+  function onSeekPointerLeave(e: React.PointerEvent) {
+    e.preventDefault();
+    stopHold();
+  }
 
   return (
     <div
       style={{
-        width: "100vw",
-        height: "100vh",
-        background: "#000",
-        overflow: "hidden",
-        position: "relative",
-        padding: 0,
-        margin: 0,
-      }}
-      onClick={() => {
-        // Optional: try fullscreen on first OK/click (works in some Fire TV browsers)
-        const el = document.documentElement as any;
-        if (!document.fullscreenElement && el?.requestFullscreen) {
-          el.requestFullscreen().catch(() => {});
-        }
-
-        // User gesture fallback for autoplay blocks
-        if (needsTap) attachAndPlay(true);
+        minHeight: "100vh",
+        padding: 16,
+        background: "#0b0b0b",
+        color: "#fff",
+        fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+        touchAction: "manipulation", // helps on mobile
       }}
     >
-      <video
-        ref={videoRef}
-        muted
-        playsInline
-        controls={false}
-        style={{
-          position: "fixed",
-          inset: 0,
-          width: "100vw",
-          height: "100vh",
-          objectFit: "cover",
-          background: "#000",
-        }}
-      />
+      <div style={{ maxWidth: 980, margin: "0 auto" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
+          <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900, letterSpacing: 0.2 }}>
+            IMAOS Control — <span style={{ opacity: 0.85 }}>{roomId}</span>
+          </h1>
 
-      {/* Tap overlay if autoplay blocked */}
-      {needsTap ? (
+          <div
+            style={{
+              marginLeft: "auto",
+              display: "flex",
+              gap: 10,
+              alignItems: "center",
+              padding: "8px 10px",
+              borderRadius: 12,
+              background: "rgba(255,255,255,0.06)",
+            }}
+          >
+            <div style={{ fontSize: 13, opacity: 0.85 }}>
+              State: <b style={{ opacity: 1 }}>{remoteState}</b>
+              {nowLabel ? (
+                <>
+                  {" "}
+                  • Now: <b>{nowLabel}</b>
+                </>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        {/* Controls */}
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 14 }}>
+          <button
+            onClick={resume}
+            style={{
+              padding: "12px 16px",
+              borderRadius: 14,
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "#1f7a1f",
+              color: "#000",
+              fontWeight: 900,
+              cursor: "pointer",
+              minWidth: 120,
+            }}
+          >
+            PLAY
+          </button>
+
+          <button
+            onClick={pause}
+            style={{
+              padding: "12px 16px",
+              borderRadius: 14,
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "#333",
+              color: "#fff",
+              fontWeight: 900,
+              cursor: "pointer",
+              minWidth: 120,
+            }}
+          >
+            PAUSE
+          </button>
+
+          <button
+            onClick={stop}
+            style={{
+              padding: "12px 16px",
+              borderRadius: 14,
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "#5a1d1d",
+              color: "#fff",
+              fontWeight: 900,
+              cursor: "pointer",
+              minWidth: 120,
+            }}
+          >
+            STOP
+          </button>
+
+          {/* RW / FF — Tap or Press-and-hold */}
+          <button
+            onClick={() => tapSeek(-TAP_SECONDS, "rw")}
+            onPointerDown={(e) => onSeekPointerDown(e, "rw")}
+            onPointerUp={onSeekPointerUp}
+            onPointerCancel={onSeekPointerUp}
+            onPointerLeave={onSeekPointerLeave}
+            style={{
+              padding: "12px 16px",
+              borderRadius: 14,
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: flash === "rw" ? "#0077ff" : "#222",
+              color: "#fff",
+              fontWeight: 900,
+              cursor: "pointer",
+              minWidth: 120,
+              transition: "background 0.15s ease",
+              userSelect: "none",
+              WebkitUserSelect: "none",
+              touchAction: "none", // IMPORTANT: prevents scroll while holding
+            }}
+          >
+            RW {TAP_SECONDS}s
+          </button>
+
+          <button
+            onClick={() => tapSeek(TAP_SECONDS, "ff")}
+            onPointerDown={(e) => onSeekPointerDown(e, "ff")}
+            onPointerUp={onSeekPointerUp}
+            onPointerCancel={onSeekPointerUp}
+            onPointerLeave={onSeekPointerLeave}
+            style={{
+              padding: "12px 16px",
+              borderRadius: 14,
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: flash === "ff" ? "#00c853" : "#222",
+              color: "#fff",
+              fontWeight: 900,
+              cursor: "pointer",
+              minWidth: 120,
+              transition: "background 0.15s ease",
+              userSelect: "none",
+              WebkitUserSelect: "none",
+              touchAction: "none", // IMPORTANT: prevents scroll while holding
+            }}
+          >
+            FF {TAP_SECONDS}s
+          </button>
+
+          <div style={{ marginLeft: "auto", flex: "1 1 280px" }}>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search videos (ex: AL1, V3)…"
+              style={{
+                width: "100%",
+                padding: "12px 14px",
+                borderRadius: 14,
+                border: "1px solid rgba(255,255,255,0.12)",
+                background: "rgba(255,255,255,0.06)",
+                color: "#fff",
+                outline: "none",
+                fontSize: 15,
+              }}
+            />
+          </div>
+        </div>
+
+        {err ? (
+          <div
+            style={{
+              marginTop: 12,
+              padding: "10px 12px",
+              borderRadius: 12,
+              background: "rgba(255,0,0,0.12)",
+              border: "1px solid rgba(255,0,0,0.18)",
+              color: "rgba(255,220,220,0.95)",
+              fontWeight: 700,
+            }}
+          >
+            {err}
+          </div>
+        ) : null}
+
+        {/* Video grid */}
         <div
           style={{
-            position: "absolute",
-            inset: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "#fff",
-            fontSize: 26,
-            fontWeight: 900,
-            background: "rgba(0,0,0,0.35)",
+            marginTop: 16,
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
+            gap: 12,
           }}
         >
-          Press OK to Start
+          {videos.map((v) => {
+            const isActive = remotePlaybackId && v.playback_id === remotePlaybackId;
+            return (
+              <button
+                key={v.id}
+                onClick={() => playVideo(v)}
+                style={{
+                  padding: "14px 12px",
+                  borderRadius: 16,
+                  border: isActive ? "2px solid rgba(0,255,140,0.75)" : "1px solid rgba(255,255,255,0.12)",
+                  background: isActive ? "rgba(0,255,140,0.12)" : "rgba(255,255,255,0.06)",
+                  color: "#fff",
+                  fontWeight: 950,
+                  letterSpacing: 0.3,
+                  cursor: "pointer",
+                  minHeight: 58,
+                }}
+                title={v.playback_id}
+              >
+                {v.label}
+              </button>
+            );
+          })}
         </div>
-      ) : null}
 
-      {/* Optional: keep errors only (no room/state debug) */}
-      {err ? (
-        <div
-          style={{
-            position: "fixed",
-            left: 10,
-            bottom: 10,
-            color: "rgba(255,170,170,0.95)",
-            fontSize: 12,
-            fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
-            background: "rgba(0,0,0,0.35)",
-            padding: "6px 10px",
-            borderRadius: 10,
-            maxWidth: "92vw",
-            lineHeight: 1.35,
-          }}
-        >
-          <b>{err}</b>
+        <div style={{ marginTop: 18, opacity: 0.7, fontSize: 12, lineHeight: 1.35 }}>
+          Tip: open this on your phone/tablet and bookmark it.
+          <br />
+          URL format: <span style={{ fontFamily: "monospace" }}>/control/studioA</span>
         </div>
-      ) : null}
+      </div>
     </div>
   );
 }
