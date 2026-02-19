@@ -14,15 +14,6 @@ type SessionData = {
   room_id?: string;
   playback_id?: string | null;
   state?: "playing" | "paused" | "stopped" | string;
-  updated_at?: string | null;
-
-  // legacy
-  seek_seconds?: number | null;
-
-  // command model (optional)
-  command_id?: number | null;
-  command_type?: string | null;
-  command_value?: number | null;
 };
 
 function clean(v: any) {
@@ -42,18 +33,17 @@ export default function ControlRoomPage({
   const [remotePlaybackId, setRemotePlaybackId] = useState<string>("");
   const [err, setErr] = useState<string>("");
 
-  // visual feedback
-  const [flash, setFlash] = useState<"rw" | "ff" | null>(null);
+  // Highlight states
+  const [flash, setFlash] = useState<string | null>(null); // "rw","ff","play","pause","stop","video-{id}"
 
-  // press-and-hold repeat timer
+  // Hold logic
   const holdTimerRef = useRef<number | null>(null);
   const holdingRef = useRef<"rw" | "ff" | null>(null);
 
-  const TAP_SECONDS = 10; // tap jump size
-  const HOLD_INTERVAL_MS = 200; // repeat speed while holding
+  const TAP_SECONDS = 10;
+  const HOLD_INTERVAL_MS = 200;
 
   async function loadVideos() {
-    setErr("");
     const qs = search ? `?search=${encodeURIComponent(search)}` : "";
     const res = await fetch(`/api/videos${qs}`, { cache: "no-store" });
     if (!res.ok) throw new Error(`videos failed: ${res.status}`);
@@ -62,17 +52,15 @@ export default function ControlRoomPage({
   }
 
   async function loadSession() {
-    const res = await fetch(
-      `/api/session?room=${encodeURIComponent(roomId)}`,
-      { cache: "no-store" }
-    );
+    const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, {
+      cache: "no-store",
+    });
     if (!res.ok) return;
     const data = (await res.json()) as SessionData;
     setRemoteState(clean(data.state) || "unknown");
     setRemotePlaybackId(clean(data.playback_id));
   }
 
-  // Initial + polling session
   useEffect(() => {
     let alive = true;
     const tick = async () => {
@@ -89,28 +77,10 @@ export default function ControlRoomPage({
     };
   }, [roomId]);
 
-  // Load videos initially + when search changes (debounced)
   useEffect(() => {
-    let alive = true;
-    const t = window.setTimeout(async () => {
-      if (!alive) return;
-      try {
-        await loadVideos();
-      } catch (e: any) {
-        setErr(e?.message || "Failed to load videos");
-      }
-    }, 200);
-    return () => {
-      alive = false;
-      window.clearTimeout(t);
-    };
+    const t = window.setTimeout(loadVideos, 200);
+    return () => window.clearTimeout(t);
   }, [search]);
-
-  // Cleanup: stop hold timer on unmount
-  useEffect(() => {
-    return () => stopHold();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const nowLabel = useMemo(() => {
     if (!remotePlaybackId) return "";
@@ -119,7 +89,6 @@ export default function ControlRoomPage({
   }, [remotePlaybackId, videos]);
 
   async function setSession(payload: any) {
-    setErr("");
     const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -127,140 +96,95 @@ export default function ControlRoomPage({
       body: JSON.stringify(payload),
     });
 
-    const text = await res.text();
     if (!res.ok) {
-      try {
-        const j = JSON.parse(text);
-        throw new Error(j?.error || `session failed ${res.status}`);
-      } catch {
-        throw new Error(text || `session failed ${res.status}`);
-      }
+      const text = await res.text();
+      setErr(text);
+      return;
     }
 
-    // refresh immediately
-    try {
-      await loadSession();
-    } catch {}
+    await loadSession();
+  }
+
+  function flashButton(name: string) {
+    setFlash(name);
+    setTimeout(() => setFlash(null), 200);
   }
 
   async function playVideo(v: VideoRow) {
+    flashButton(`video-${v.id}`);
     await setSession({
       state: "playing",
       playback_id: v.playback_id,
-      started_at: new Date().toISOString(),
-      paused_at: null,
     });
   }
 
   async function pause() {
+    flashButton("pause");
     await setSession({
       state: "paused",
       playback_id: remotePlaybackId || null,
-      paused_at: new Date().toISOString(),
     });
   }
 
   async function resume() {
+    flashButton("play");
     await setSession({
       state: "playing",
       playback_id: remotePlaybackId || null,
-      started_at: new Date().toISOString(),
-      paused_at: null,
     });
   }
 
   async function stop() {
+    flashButton("stop");
     stopHold();
     await setSession({
       state: "stopped",
       playback_id: null,
-      paused_at: null,
-      seek_seconds: null,
     });
   }
 
-  /**
-   * One-time seek command.
-   * Requires /api/session to accept:
-   * { command: "seek_delta", value: +10 } or -10
-   */
-  async function seekDelta(deltaSeconds: number) {
-    const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, {
+  async function seekDelta(delta: number) {
+    await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
       body: JSON.stringify({
         command: "seek_delta",
-        value: deltaSeconds,
+        value: delta,
       }),
     });
-
-    const text = await res.text();
-    if (!res.ok) {
-      try {
-        const j = JSON.parse(text);
-        throw new Error(j?.error || `seek failed ${res.status}`);
-      } catch {
-        throw new Error(text || `seek failed ${res.status}`);
-      }
-    }
   }
 
   function stopHold() {
     if (holdTimerRef.current !== null) {
-      window.clearInterval(holdTimerRef.current);
+      clearInterval(holdTimerRef.current);
       holdTimerRef.current = null;
     }
     holdingRef.current = null;
-    setFlash(null);
-  }
-
-  async function tapSeek(deltaSeconds: number, type: "rw" | "ff") {
-    setErr("");
-    setFlash(type);
-    try {
-      await seekDelta(deltaSeconds);
-    } catch (e: any) {
-      setErr(e?.message || "Seek failed");
-    } finally {
-      window.setTimeout(() => setFlash(null), 250);
-    }
   }
 
   function startHold(type: "rw" | "ff") {
-    // If already holding, ignore
-    if (holdTimerRef.current !== null) return;
+    if (holdTimerRef.current) return;
 
-    setErr("");
+    flashButton(type);
     holdingRef.current = type;
-    setFlash(type);
 
     const delta = type === "rw" ? -TAP_SECONDS : TAP_SECONDS;
 
-    // Fire immediately once
-    seekDelta(delta).catch((e: any) => setErr(e?.message || "Seek failed"));
+    seekDelta(delta);
 
-    // Then repeat fast
     holdTimerRef.current = window.setInterval(() => {
-      // if stopped holding, bail
       if (!holdingRef.current) return;
-      seekDelta(delta).catch((e: any) => setErr(e?.message || "Seek failed"));
+      seekDelta(delta);
     }, HOLD_INTERVAL_MS);
   }
 
-  function onSeekPointerDown(e: React.PointerEvent, type: "rw" | "ff") {
+  function handlePointerDown(e: React.PointerEvent, type: "rw" | "ff") {
     e.preventDefault();
-    (e.currentTarget as any).setPointerCapture?.(e.pointerId);
     startHold(type);
   }
 
-  function onSeekPointerUp(e: React.PointerEvent) {
-    e.preventDefault();
-    stopHold();
-  }
-
-  function onSeekPointerLeave(e: React.PointerEvent) {
-    e.preventDefault();
+  function handlePointerUp() {
     stopHold();
   }
 
@@ -271,52 +195,23 @@ export default function ControlRoomPage({
         padding: 16,
         background: "#0b0b0b",
         color: "#fff",
-        fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
-        touchAction: "manipulation", // helps on mobile
+        fontFamily: "system-ui",
       }}
     >
       <div style={{ maxWidth: 980, margin: "0 auto" }}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
-          <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900, letterSpacing: 0.2 }}>
-            IMAOS Control — <span style={{ opacity: 0.85 }}>{roomId}</span>
-          </h1>
+        <h1 style={{ fontSize: 26, fontWeight: 900 }}>
+          IMAOS Control — {roomId}
+        </h1>
 
-          <div
-            style={{
-              marginLeft: "auto",
-              display: "flex",
-              gap: 10,
-              alignItems: "center",
-              padding: "8px 10px",
-              borderRadius: 12,
-              background: "rgba(255,255,255,0.06)",
-            }}
-          >
-            <div style={{ fontSize: 13, opacity: 0.85 }}>
-              State: <b style={{ opacity: 1 }}>{remoteState}</b>
-              {nowLabel ? (
-                <>
-                  {" "}
-                  • Now: <b>{nowLabel}</b>
-                </>
-              ) : null}
-            </div>
-          </div>
-        </div>
-
-        {/* Controls */}
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 14 }}>
+        <div style={{ marginTop: 12, display: "flex", gap: 12, flexWrap: "wrap" }}>
           <button
             onClick={resume}
             style={{
               padding: "12px 16px",
               borderRadius: 14,
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: "#1f7a1f",
+              background: flash === "play" ? "#00ff88" : "#1f7a1f",
               color: "#000",
               fontWeight: 900,
-              cursor: "pointer",
-              minWidth: 120,
             }}
           >
             PLAY
@@ -327,12 +222,9 @@ export default function ControlRoomPage({
             style={{
               padding: "12px 16px",
               borderRadius: 14,
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: "#333",
+              background: flash === "pause" ? "#888" : "#333",
               color: "#fff",
               fontWeight: 900,
-              cursor: "pointer",
-              minWidth: 120,
             }}
           >
             PAUSE
@@ -343,112 +235,59 @@ export default function ControlRoomPage({
             style={{
               padding: "12px 16px",
               borderRadius: 14,
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: "#5a1d1d",
+              background: flash === "stop" ? "#ff4444" : "#5a1d1d",
               color: "#fff",
               fontWeight: 900,
-              cursor: "pointer",
-              minWidth: 120,
             }}
           >
             STOP
           </button>
 
-          {/* RW / FF — Tap or Press-and-hold */}
           <button
-            onClick={() => tapSeek(-TAP_SECONDS, "rw")}
-            onPointerDown={(e) => onSeekPointerDown(e, "rw")}
-            onPointerUp={onSeekPointerUp}
-            onPointerCancel={onSeekPointerUp}
-            onPointerLeave={onSeekPointerLeave}
+            onClick={() => flashButton("rw")}
+            onPointerDown={(e) => handlePointerDown(e, "rw")}
+            onPointerUp={handlePointerUp}
             style={{
               padding: "12px 16px",
               borderRadius: 14,
-              border: "1px solid rgba(255,255,255,0.12)",
               background: flash === "rw" ? "#0077ff" : "#222",
               color: "#fff",
               fontWeight: 900,
-              cursor: "pointer",
-              minWidth: 120,
-              transition: "background 0.15s ease",
-              userSelect: "none",
-              WebkitUserSelect: "none",
-              touchAction: "none", // IMPORTANT: prevents scroll while holding
             }}
           >
             RW {TAP_SECONDS}s
           </button>
 
           <button
-            onClick={() => tapSeek(TAP_SECONDS, "ff")}
-            onPointerDown={(e) => onSeekPointerDown(e, "ff")}
-            onPointerUp={onSeekPointerUp}
-            onPointerCancel={onSeekPointerUp}
-            onPointerLeave={onSeekPointerLeave}
+            onClick={() => flashButton("ff")}
+            onPointerDown={(e) => handlePointerDown(e, "ff")}
+            onPointerUp={handlePointerUp}
             style={{
               padding: "12px 16px",
               borderRadius: 14,
-              border: "1px solid rgba(255,255,255,0.12)",
               background: flash === "ff" ? "#00c853" : "#222",
               color: "#fff",
               fontWeight: 900,
-              cursor: "pointer",
-              minWidth: 120,
-              transition: "background 0.15s ease",
-              userSelect: "none",
-              WebkitUserSelect: "none",
-              touchAction: "none", // IMPORTANT: prevents scroll while holding
             }}
           >
             FF {TAP_SECONDS}s
           </button>
-
-          <div style={{ marginLeft: "auto", flex: "1 1 280px" }}>
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search videos (ex: AL1, V3)…"
-              style={{
-                width: "100%",
-                padding: "12px 14px",
-                borderRadius: 14,
-                border: "1px solid rgba(255,255,255,0.12)",
-                background: "rgba(255,255,255,0.06)",
-                color: "#fff",
-                outline: "none",
-                fontSize: 15,
-              }}
-            />
-          </div>
         </div>
-
-        {err ? (
-          <div
-            style={{
-              marginTop: 12,
-              padding: "10px 12px",
-              borderRadius: 12,
-              background: "rgba(255,0,0,0.12)",
-              border: "1px solid rgba(255,0,0,0.18)",
-              color: "rgba(255,220,220,0.95)",
-              fontWeight: 700,
-            }}
-          >
-            {err}
-          </div>
-        ) : null}
 
         {/* Video grid */}
         <div
           style={{
-            marginTop: 16,
+            marginTop: 20,
             display: "grid",
             gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
             gap: 12,
           }}
         >
           {videos.map((v) => {
-            const isActive = remotePlaybackId && v.playback_id === remotePlaybackId;
+            const isActive =
+              remotePlaybackId && v.playback_id === remotePlaybackId;
+            const isFlashing = flash === `video-${v.id}`;
+
             return (
               <button
                 key={v.id}
@@ -456,26 +295,24 @@ export default function ControlRoomPage({
                 style={{
                   padding: "14px 12px",
                   borderRadius: 16,
-                  border: isActive ? "2px solid rgba(0,255,140,0.75)" : "1px solid rgba(255,255,255,0.12)",
-                  background: isActive ? "rgba(0,255,140,0.12)" : "rgba(255,255,255,0.06)",
+                  border: isActive
+                    ? "2px solid rgba(0,255,140,0.8)"
+                    : "1px solid rgba(255,255,255,0.15)",
+                  background: isFlashing
+                    ? "rgba(255,255,255,0.2)"
+                    : isActive
+                    ? "rgba(0,255,140,0.12)"
+                    : "rgba(255,255,255,0.06)",
                   color: "#fff",
-                  fontWeight: 950,
-                  letterSpacing: 0.3,
+                  fontWeight: 900,
                   cursor: "pointer",
-                  minHeight: 58,
+                  transition: "all 0.15s ease",
                 }}
-                title={v.playback_id}
               >
                 {v.label}
               </button>
             );
           })}
-        </div>
-
-        <div style={{ marginTop: 18, opacity: 0.7, fontSize: 12, lineHeight: 1.35 }}>
-          Tip: open this on your phone/tablet and bookmark it.
-          <br />
-          URL format: <span style={{ fontFamily: "monospace" }}>/control/studioA</span>
         </div>
       </div>
     </div>
