@@ -9,22 +9,14 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-function clean(v: unknown) {
-  return (v ?? "").toString().trim();
-}
-
-function getRoomId(url: URL) {
-  return (url.searchParams.get("room") || "studioA").trim() || "studioA";
-}
-
 async function lookupMuxPlaybackId(label: string): Promise<string | null> {
-  const c = clean(label);
-  if (!c) return null;
+  const clean = (label ?? "").toString().trim();
+  if (!clean) return null;
 
   const { data, error } = await supabase
     .from("videos")
     .select("playback_id")
-    .eq("label", c)
+    .eq("label", clean)
     .eq("active", true)
     .single();
 
@@ -39,7 +31,11 @@ async function normalizePlaybackId(input: unknown): Promise<string | null> {
   const fromDb = await lookupMuxPlaybackId(raw);
   if (fromDb) return fromDb;
 
-  return raw; // assume already mux playback id
+  return raw; // assume it's already a mux playback id
+}
+
+function getRoomId(url: URL) {
+  return (url.searchParams.get("room") || "studioA").trim() || "studioA";
 }
 
 // GET current room state
@@ -53,7 +49,10 @@ export async function GET(request: Request) {
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message, room_id: roomId }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message, room_id: roomId },
+      { status: 500 }
+    );
   }
 
   return NextResponse.json(data);
@@ -65,20 +64,13 @@ export async function POST(request: Request) {
   const roomId = getRoomId(url);
 
   const body = await request.json().catch(() => ({}));
-  const {
-    state,
-    playback_id,
-    video_id,
-    started_at,
-    paused_at,
-    seek_seconds,
-  } = body as {
+  const { state, playback_id, video_id, started_at, paused_at, seek_seconds } = body as {
     state?: string | null;
     playback_id?: string | null;
     video_id?: string | null;
     started_at?: string | null;
     paused_at?: string | null;
-    seek_seconds?: number | null; // NEW
+    seek_seconds?: number | string | null;
   };
 
   const normalized = await normalizePlaybackId(playback_id ?? video_id);
@@ -91,27 +83,29 @@ export async function POST(request: Request) {
     );
   }
 
-  const updatePayload: any = {
-    state: state ?? null,
-    playback_id: normalized,
-    started_at: started_at ?? null,
-    paused_at: paused_at ?? null,
-  };
-
-  // Only update seek_seconds if provided
-  if (typeof seek_seconds === "number" && Number.isFinite(seek_seconds)) {
-    updatePayload.seek_seconds = Math.trunc(seek_seconds);
-  }
+  const seekNum =
+    seek_seconds === null || seek_seconds === undefined
+      ? null
+      : Number(seek_seconds);
 
   const { data, error } = await supabase
     .from("room_sessions")
-    .update(updatePayload)
+    .update({
+      state: state ?? null,
+      playback_id: normalized,
+      started_at: started_at ?? null,
+      paused_at: paused_at ?? null,
+      seek_seconds: Number.isFinite(seekNum as number) ? (seekNum as number) : null,
+    })
     .eq("room_id", roomId)
     .select("*")
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message, room_id: roomId }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message, room_id: roomId },
+      { status: 500 }
+    );
   }
 
   return NextResponse.json(data);
