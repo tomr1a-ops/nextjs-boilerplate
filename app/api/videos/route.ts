@@ -13,22 +13,22 @@ function clean(v: unknown) {
   return (v ?? "").toString().trim();
 }
 
-// GET /api/videos?search=AL1&category=warmup&active=1
+// GET /api/videos?search=AL1&active=1
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const search = clean(url.searchParams.get("search"));
-  const category = clean(url.searchParams.get("category"));
   const active = clean(url.searchParams.get("active")) || "1";
 
-  let q = supabase.from("videos").select("*").order("label", { ascending: true });
+  let q = supabase
+    .from("videos")
+    .select("id,label,playback_id,sort_order,active,created_at")
+    .order("sort_order", { ascending: true })
+    .order("label", { ascending: true });
 
   if (active === "1") q = q.eq("active", true);
-  if (category) q = q.eq("category", category);
 
-  // Simple search: matches label OR title if you have it
   if (search) {
-    // If your videos table doesn't have title, label match still works.
-    q = q.or(`label.ilike.%${search}%,title.ilike.%${search}%`);
+    q = q.ilike("label", `%${search}%`);
   }
 
   const { data, error } = await q;
@@ -39,4 +39,3 @@ export async function GET(request: Request) {
 
   return NextResponse.json({ videos: data ?? [] });
 }
-
