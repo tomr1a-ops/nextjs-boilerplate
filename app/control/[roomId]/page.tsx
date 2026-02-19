@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type VideoRow = {
   id: string;
@@ -16,10 +16,10 @@ type SessionData = {
   state?: "playing" | "paused" | "stopped" | string;
   updated_at?: string | null;
 
-  // legacy (you had this)
+  // legacy
   seek_seconds?: number | null;
 
-  // NEW (optional): one-time command model fields
+  // command model (optional)
   command_id?: number | null;
   command_type?: string | null;
   command_value?: number | null;
@@ -42,8 +42,15 @@ export default function ControlRoomPage({
   const [remotePlaybackId, setRemotePlaybackId] = useState<string>("");
   const [err, setErr] = useState<string>("");
 
-  // visual feedback for FF/RW
+  // visual feedback
   const [flash, setFlash] = useState<"rw" | "ff" | null>(null);
+
+  // press-and-hold repeat timer
+  const holdTimerRef = useRef<number | null>(null);
+  const holdingRef = useRef<"rw" | "ff" | null>(null);
+
+  const TAP_SECONDS = 10; // tap jump size
+  const HOLD_INTERVAL_MS = 200; // repeat speed while holding
 
   async function loadVideos() {
     setErr("");
@@ -98,6 +105,12 @@ export default function ControlRoomPage({
       window.clearTimeout(t);
     };
   }, [search]);
+
+  // Cleanup: stop hold timer on unmount
+  useEffect(() => {
+    return () => stopHold();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const nowLabel = useMemo(() => {
     if (!remotePlaybackId) return "";
@@ -157,6 +170,7 @@ export default function ControlRoomPage({
   }
 
   async function stop() {
+    stopHold();
     await setSession({
       state: "stopped",
       playback_id: null,
@@ -166,11 +180,9 @@ export default function ControlRoomPage({
   }
 
   /**
-   * FF/RW: one-time command model.
+   * One-time seek command.
    * Requires /api/session to accept:
    * { command: "seek_delta", value: +10 } or -10
-   *
-   * This avoids "re-seek every poll" bugs.
    */
   async function seekDelta(deltaSeconds: number) {
     const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, {
@@ -179,7 +191,7 @@ export default function ControlRoomPage({
       cache: "no-store",
       body: JSON.stringify({
         command: "seek_delta",
-        value: deltaSeconds, // +10 / -10
+        value: deltaSeconds,
       }),
     });
 
@@ -192,23 +204,64 @@ export default function ControlRoomPage({
         throw new Error(text || `seek failed ${res.status}`);
       }
     }
-
-    // refresh immediately so UI stays in sync
-    try {
-      await loadSession();
-    } catch {}
   }
 
-  async function handleSeek(delta: number, type: "rw" | "ff") {
+  function stopHold() {
+    if (holdTimerRef.current !== null) {
+      window.clearInterval(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+    holdingRef.current = null;
+    setFlash(null);
+  }
+
+  async function tapSeek(deltaSeconds: number, type: "rw" | "ff") {
     setErr("");
     setFlash(type);
     try {
-      await seekDelta(delta);
+      await seekDelta(deltaSeconds);
     } catch (e: any) {
       setErr(e?.message || "Seek failed");
     } finally {
       window.setTimeout(() => setFlash(null), 250);
     }
+  }
+
+  function startHold(type: "rw" | "ff") {
+    // If already holding, ignore
+    if (holdTimerRef.current !== null) return;
+
+    setErr("");
+    holdingRef.current = type;
+    setFlash(type);
+
+    const delta = type === "rw" ? -TAP_SECONDS : TAP_SECONDS;
+
+    // Fire immediately once
+    seekDelta(delta).catch((e: any) => setErr(e?.message || "Seek failed"));
+
+    // Then repeat fast
+    holdTimerRef.current = window.setInterval(() => {
+      // if stopped holding, bail
+      if (!holdingRef.current) return;
+      seekDelta(delta).catch((e: any) => setErr(e?.message || "Seek failed"));
+    }, HOLD_INTERVAL_MS);
+  }
+
+  function onSeekPointerDown(e: React.PointerEvent, type: "rw" | "ff") {
+    e.preventDefault();
+    (e.currentTarget as any).setPointerCapture?.(e.pointerId);
+    startHold(type);
+  }
+
+  function onSeekPointerUp(e: React.PointerEvent) {
+    e.preventDefault();
+    stopHold();
+  }
+
+  function onSeekPointerLeave(e: React.PointerEvent) {
+    e.preventDefault();
+    stopHold();
   }
 
   return (
@@ -219,17 +272,11 @@ export default function ControlRoomPage({
         background: "#0b0b0b",
         color: "#fff",
         fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+        touchAction: "manipulation", // helps on mobile
       }}
     >
       <div style={{ maxWidth: 980, margin: "0 auto" }}>
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 12,
-            alignItems: "center",
-          }}
-        >
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
           <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900, letterSpacing: 0.2 }}>
             IMAOS Control — <span style={{ opacity: 0.85 }}>{roomId}</span>
           </h1>
@@ -307,9 +354,13 @@ export default function ControlRoomPage({
             STOP
           </button>
 
-          {/* RW / FF with flash feedback */}
+          {/* RW / FF — Tap or Press-and-hold */}
           <button
-            onClick={() => handleSeek(-10, "rw")}
+            onClick={() => tapSeek(-TAP_SECONDS, "rw")}
+            onPointerDown={(e) => onSeekPointerDown(e, "rw")}
+            onPointerUp={onSeekPointerUp}
+            onPointerCancel={onSeekPointerUp}
+            onPointerLeave={onSeekPointerLeave}
             style={{
               padding: "12px 16px",
               borderRadius: 14,
@@ -320,13 +371,20 @@ export default function ControlRoomPage({
               cursor: "pointer",
               minWidth: 120,
               transition: "background 0.15s ease",
+              userSelect: "none",
+              WebkitUserSelect: "none",
+              touchAction: "none", // IMPORTANT: prevents scroll while holding
             }}
           >
-            RW 10s
+            RW {TAP_SECONDS}s
           </button>
 
           <button
-            onClick={() => handleSeek(10, "ff")}
+            onClick={() => tapSeek(TAP_SECONDS, "ff")}
+            onPointerDown={(e) => onSeekPointerDown(e, "ff")}
+            onPointerUp={onSeekPointerUp}
+            onPointerCancel={onSeekPointerUp}
+            onPointerLeave={onSeekPointerLeave}
             style={{
               padding: "12px 16px",
               borderRadius: 14,
@@ -337,9 +395,12 @@ export default function ControlRoomPage({
               cursor: "pointer",
               minWidth: 120,
               transition: "background 0.15s ease",
+              userSelect: "none",
+              WebkitUserSelect: "none",
+              touchAction: "none", // IMPORTANT: prevents scroll while holding
             }}
           >
-            FF 10s
+            FF {TAP_SECONDS}s
           </button>
 
           <div style={{ marginLeft: "auto", flex: "1 1 280px" }}>
@@ -395,12 +456,8 @@ export default function ControlRoomPage({
                 style={{
                   padding: "14px 12px",
                   borderRadius: 16,
-                  border: isActive
-                    ? "2px solid rgba(0,255,140,0.75)"
-                    : "1px solid rgba(255,255,255,0.12)",
-                  background: isActive
-                    ? "rgba(0,255,140,0.12)"
-                    : "rgba(255,255,255,0.06)",
+                  border: isActive ? "2px solid rgba(0,255,140,0.75)" : "1px solid rgba(255,255,255,0.12)",
+                  background: isActive ? "rgba(0,255,140,0.12)" : "rgba(255,255,255,0.06)",
                   color: "#fff",
                   fontWeight: 950,
                   letterSpacing: 0.3,
