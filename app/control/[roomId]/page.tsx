@@ -15,6 +15,7 @@ type SessionData = {
   playback_id?: string | null;
   state?: "playing" | "paused" | "stopped" | string;
   updated_at?: string | null;
+  seek_seconds?: number | null;
 };
 
 function clean(v: any) {
@@ -28,6 +29,7 @@ export default function ControlRoomPage({ params }: { params: { roomId: string }
   const [search, setSearch] = useState("");
   const [remoteState, setRemoteState] = useState<string>("loading");
   const [remotePlaybackId, setRemotePlaybackId] = useState<string>("");
+  const [remoteSeek, setRemoteSeek] = useState<number>(0);
   const [err, setErr] = useState<string>("");
 
   async function loadVideos() {
@@ -43,11 +45,13 @@ export default function ControlRoomPage({ params }: { params: { roomId: string }
     const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, { cache: "no-store" });
     if (!res.ok) return;
     const data = (await res.json()) as SessionData;
+
     setRemoteState(clean(data.state) || "unknown");
     setRemotePlaybackId(clean(data.playback_id));
+    setRemoteSeek(Number(data.seek_seconds ?? 0) || 0);
   }
 
-  // Initial + polling session
+  // Poll session
   useEffect(() => {
     let alive = true;
     const tick = async () => {
@@ -64,7 +68,7 @@ export default function ControlRoomPage({ params }: { params: { roomId: string }
     };
   }, [roomId]);
 
-  // Load videos initially + when search changes (debounced)
+  // Load videos when search changes (debounced)
   useEffect(() => {
     let alive = true;
     const t = window.setTimeout(async () => {
@@ -113,18 +117,16 @@ export default function ControlRoomPage({ params }: { params: { roomId: string }
   }
 
   async function playVideo(v: VideoRow) {
-    // Your /api/session normalizes label->playback_id automatically,
-    // but we already have playback_id, so send it directly.
     await setSession({
       state: "playing",
       playback_id: v.playback_id,
       started_at: new Date().toISOString(),
       paused_at: null,
+      seek_seconds: 0, // reset seek when starting a new video
     });
   }
 
   async function pause() {
-    // Keep same playback_id, just pause
     await setSession({
       state: "paused",
       playback_id: remotePlaybackId || null,
@@ -146,6 +148,18 @@ export default function ControlRoomPage({ params }: { params: { roomId: string }
       state: "stopped",
       playback_id: null,
       paused_at: null,
+      seek_seconds: 0,
+    });
+  }
+
+  async function seekDelta(deltaSeconds: number) {
+    // We just add/subtract and store it centrally. Player will jump.
+    const nextSeek = (Number(remoteSeek) || 0) + deltaSeconds;
+
+    await setSession({
+      state: remoteState === "paused" ? "paused" : "playing",
+      playback_id: remotePlaybackId || null,
+      seek_seconds: nextSeek,
     });
   }
 
@@ -184,12 +198,14 @@ export default function ControlRoomPage({ params }: { params: { roomId: string }
                   • Now: <b>{nowLabel}</b>
                 </>
               ) : null}
+              {" "}
+              • Seek: <b>{remoteSeek}s</b>
             </div>
           </div>
         </div>
 
         {/* Controls */}
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 14 }}>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 14, alignItems: "center" }}>
           <button
             onClick={resume}
             style={{
@@ -236,6 +252,39 @@ export default function ControlRoomPage({ params }: { params: { roomId: string }
             }}
           >
             STOP
+          </button>
+
+          {/* RW / FF */}
+          <button
+            onClick={() => seekDelta(-10)}
+            style={{
+              padding: "12px 16px",
+              borderRadius: 14,
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "#222",
+              color: "#fff",
+              fontWeight: 900,
+              cursor: "pointer",
+              minWidth: 120,
+            }}
+          >
+            RW 10s
+          </button>
+
+          <button
+            onClick={() => seekDelta(10)}
+            style={{
+              padding: "12px 16px",
+              borderRadius: 14,
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "#222",
+              color: "#fff",
+              fontWeight: 900,
+              cursor: "pointer",
+              minWidth: 120,
+            }}
+          >
+            FF 10s
           </button>
 
           <div style={{ marginLeft: "auto", flex: "1 1 280px" }}>
@@ -316,4 +365,3 @@ export default function ControlRoomPage({ params }: { params: { roomId: string }
     </div>
   );
 }
-
