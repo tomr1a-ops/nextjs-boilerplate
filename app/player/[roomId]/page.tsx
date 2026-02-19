@@ -6,6 +6,11 @@ type SessionData = {
   room_id?: string;
   playback_id?: string | null; // real mux playback id
   state?: "playing" | "paused" | "stopped" | string;
+
+  // One-time command model (for FF/RW)
+  command_id?: number | null;
+  command_type?: string | null;
+  command_value?: number | null;
 };
 
 function clean(v: any) {
@@ -31,7 +36,11 @@ function loadHlsJs(): Promise<void> {
   });
 }
 
-export default function PlayerRoomPage({ params }: { params: { roomId: string } }) {
+export default function PlayerRoomPage({
+  params,
+}: {
+  params: { roomId: string };
+}) {
   const roomId = clean(params.roomId) || "studioA";
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -42,6 +51,32 @@ export default function PlayerRoomPage({ params }: { params: { roomId: string } 
   const [err, setErr] = useState<string>("");
   const [needsTap, setNeedsTap] = useState<boolean>(false);
 
+  // NEW: one-time command application tracking
+  const lastAppliedCommandIdRef = useRef<number>(-1);
+
+  // NEW: if seek happens before metadata is ready, queue it and apply on loadedmetadata
+  const pendingSeekDeltaRef = useRef<number>(0);
+
+  function applySeekDelta(deltaSeconds: number) {
+    const video = videoRef.current;
+    if (!video) return;
+
+    // If metadata isn't ready, queue it
+    if (!Number.isFinite(video.duration) || video.readyState < 1) {
+      pendingSeekDeltaRef.current += deltaSeconds;
+      return;
+    }
+
+    const current = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+    const next = Math.max(0, current + deltaSeconds);
+    try {
+      video.currentTime = next;
+    } catch {
+      // If it fails (some webviews), queue and retry after metadata
+      pendingSeekDeltaRef.current += deltaSeconds;
+    }
+  }
+
   async function refresh() {
     const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, {
       cache: "no-store",
@@ -49,8 +84,25 @@ export default function PlayerRoomPage({ params }: { params: { roomId: string } 
     if (!res.ok) return;
     const data = (await res.json()) as SessionData;
 
-    setRemoteState(clean(data.state) || "unknown");
-    setPlaybackId(clean(data.playback_id));
+    const state = clean(data.state) || "unknown";
+    const pb = clean(data.playback_id);
+
+    setRemoteState(state);
+    setPlaybackId(pb);
+
+    // NEW: Apply seek command ONCE per new command_id
+    const cmdId = Number(data.command_id ?? -1);
+    if (Number.isFinite(cmdId) && cmdId >= 0 && cmdId !== lastAppliedCommandIdRef.current) {
+      lastAppliedCommandIdRef.current = cmdId;
+
+      const cmdType = clean(data.command_type);
+      const cmdValue = Number(data.command_value ?? 0);
+
+      if (cmdType === "seek_delta" && Number.isFinite(cmdValue) && cmdValue !== 0) {
+        // Only makes sense if we have a playback loaded (or about to)
+        applySeekDelta(cmdValue);
+      }
+    }
   }
 
   // poll room session
@@ -69,6 +121,26 @@ export default function PlayerRoomPage({ params }: { params: { roomId: string } 
       window.clearInterval(id);
     };
   }, [roomId]);
+
+  // When metadata loads, apply any queued seek deltas
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const onLoadedMetadata = () => {
+      const queued = pendingSeekDeltaRef.current;
+      if (queued !== 0) {
+        pendingSeekDeltaRef.current = 0;
+        applySeekDelta(queued);
+      }
+    };
+
+    video.addEventListener("loadedmetadata", onLoadedMetadata);
+    return () => {
+      video.removeEventListener("loadedmetadata", onLoadedMetadata);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // destroy helper
   function destroyHls() {
