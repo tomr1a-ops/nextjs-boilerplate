@@ -37,9 +37,10 @@ export async function GET(req: NextRequest) {
     let allowedLabels: string[] | null = null;
 
     if (room) {
+      // NOTE: licensee_rooms does NOT have "status" in your schema
       const { data: roomRows, error: roomErr } = await supabase
         .from("licensee_rooms")
-        .select("licensee_id,status,room_id")
+        .select("licensee_id, room_id")
         .eq("room_id", room);
 
       if (roomErr) {
@@ -47,33 +48,23 @@ export async function GET(req: NextRequest) {
       }
 
       if (!roomRows || roomRows.length === 0) {
-        // no license mapping => no videos
         return NextResponse.json({ videos: [] }, { status: 200 });
       }
 
       // If multiple mappings exist for same room, that's a data integrity issue.
-      // Try to pick exactly one active; if ambiguous, return 409.
-      const activeRows = roomRows.filter(
-        (r: any) => !r?.status || String(r.status) === "active"
-      );
-
-      if (activeRows.length === 0) {
-        return NextResponse.json({ videos: [] }, { status: 200 });
-      }
-
-      if (activeRows.length > 1) {
+      if (roomRows.length > 1) {
         return NextResponse.json(
           {
             error:
-              "Room is assigned to multiple active licensees. Fix licensee_rooms so room_id is unique.",
+              "Room is assigned to multiple licensees. Fix licensee_rooms so room_id is unique.",
             room_id: room,
-            matches: activeRows.map((r: any) => ({ licensee_id: r.licensee_id })),
+            matches: roomRows.map((r: any) => ({ licensee_id: r.licensee_id })),
           },
           { status: 409 }
         );
       }
 
-      const licenseeId = activeRows[0].licensee_id;
+      const licenseeId = roomRows[0].licensee_id;
 
       const { data: accessRows, error: accessErr } = await supabase
         .from("licensee_video_access")
@@ -84,6 +75,7 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: accessErr.message }, { status: 500 });
       }
 
+      // If your licensee_video_access has "status", we honor it; if not, everything counts as active.
       allowedLabels =
         (accessRows || [])
           .filter((r: any) => !r?.status || String(r.status) === "active")
@@ -113,7 +105,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ videos: (data || []) as VideoRow[] }, { status: 200 });
+    return NextResponse.json(
+      { videos: (data || []) as VideoRow[] },
+      { status: 200 }
+    );
   } catch (e: any) {
     return NextResponse.json(
       { error: e?.message || "Unexpected error" },
