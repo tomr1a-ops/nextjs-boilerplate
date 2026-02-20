@@ -1,8 +1,13 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
+async function getCookieStore(): Promise<any> {
+  const c: any = cookies();
+  return c && typeof c.then === "function" ? await c : c;
+}
+
 export async function supabaseServerAnon() {
-  const cookieStore = await cookies();
+  const cookieStore = await getCookieStore();
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -10,11 +15,11 @@ export async function supabaseServerAnon() {
   return createServerClient(url, anon, {
     cookies: {
       getAll() {
-        return (cookieStore as any).getAll();
+        return cookieStore.getAll();
       },
       setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value, options }) => {
-          (cookieStore as any).set(name, value, options);
+        cookiesToSet.forEach(({ name, value, options }: any) => {
+          cookieStore.set(name, value, options);
         });
       },
     },
