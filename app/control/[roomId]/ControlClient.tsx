@@ -266,7 +266,7 @@ export default function ControlClient({ roomId }: { roomId: string }) {
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 14 }}>
           {filtered.map((v) => {
-            const isActive = remotePlaybackId && remotePlaybackId === v.playback_id;
+            const isActive = !!remotePlaybackId && remotePlaybackId === v.playback_id;
             return (
               <button
                 key={v.id}
