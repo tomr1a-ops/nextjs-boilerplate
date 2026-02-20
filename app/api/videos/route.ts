@@ -49,7 +49,8 @@ export async function GET(req: NextRequest) {
         return NextResponse.json(
           {
             build: "videos-v3-no-status",
-            error: "Room is assigned to multiple licensees (room_id must be unique).",
+            error:
+              "Room is assigned to multiple licensees (room_id must be unique).",
             room_id: room,
             matches: roomRows.map((r: any) => ({ licensee_id: r.licensee_id })),
           },
