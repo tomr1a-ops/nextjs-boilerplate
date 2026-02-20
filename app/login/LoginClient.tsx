@@ -1,101 +1,153 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { useState } from "react";
+import { supabaseBrowser } from "@/lib/supabase/browser";
 
-function supabaseBrowser() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+function clean(v: any) {
+  return (v ?? "").toString().trim();
 }
 
 export default function LoginClient() {
-  const supabase = useMemo(() => supabaseBrowser(), []);
-
-  const [email, setEmail] = useState("");
-  const [pw, setPw] = useState("");
-  const [err, setErr] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [email, setEmail] = useState("tom@imaimpact.com");
+  const [password, setPassword] = useState("");
+  const [err, setErr] = useState<string>("");
+  const [loading, setLoading] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErr("");
-    setBusy(true);
 
+    const e1 = clean(email).toLowerCase();
+    const p1 = clean(password);
+
+    if (!e1) return setErr("Enter your email.");
+    if (!p1) return setErr("Enter your password.");
+
+    setLoading(true);
     try {
+      const supabase = supabaseBrowser();
+
       const { error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password: pw,
+        email: e1,
+        password: p1,
       });
 
-      if (error) throw error;
+      if (error) {
+        setErr(error.message || "Login failed");
+        return;
+      }
 
+      // IMPORTANT: hard navigation so server sees cookies
       window.location.href = "/admin";
-    } catch (e: any) {
-      setErr(e?.message || "Login failed");
+    } catch (ex: any) {
+      setErr(ex?.message || "Login failed");
     } finally {
-      setBusy(false);
+      setLoading(false);
     }
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#0b0b0b", color: "#fff", padding: 18 }}>
-      <div style={{ maxWidth: 520, margin: "80px auto", padding: 18, borderRadius: 16, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.10)" }}>
-        <div style={{ fontSize: 28, fontWeight: 900 }}>IMAOS Admin Login</div>
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#0b0b0b",
+        color: "#fff",
+        display: "grid",
+        placeItems: "center",
+        padding: 16,
+        fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+      }}
+    >
+      <form
+        onSubmit={onSubmit}
+        style={{
+          width: "min(520px, 100%)",
+          background: "rgba(255,255,255,0.04)",
+          border: "1px solid rgba(255,255,255,0.10)",
+          borderRadius: 24,
+          padding: 28,
+          boxShadow: "0 20px 80px rgba(0,0,0,0.45)",
+        }}
+      >
+        <div style={{ fontSize: 40, fontWeight: 900, marginBottom: 18 }}>
+          IMAOS Admin Login
+        </div>
 
-        <form onSubmit={onSubmit} style={{ marginTop: 18, display: "grid", gap: 12 }}>
-          <input
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="Email"
-            style={{
-              padding: "12px 14px",
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: "rgba(255,255,255,0.06)",
-              color: "#fff",
-              outline: "none",
-            }}
-          />
-          <input
-            value={pw}
-            onChange={(e) => setPw(e.target.value)}
-            placeholder="Password"
-            type="password"
-            style={{
-              padding: "12px 14px",
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: "rgba(255,255,255,0.06)",
-              color: "#fff",
-              outline: "none",
-            }}
-          />
+        <div style={{ marginBottom: 10, opacity: 0.9 }}>Email</div>
+        <input
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          autoComplete="email"
+          style={{
+            width: "100%",
+            padding: "18px 18px",
+            borderRadius: 18,
+            border: "1px solid rgba(255,255,255,0.12)",
+            background: "rgba(235,242,255,1)",
+            color: "#000",
+            fontSize: 18,
+            outline: "none",
+            marginBottom: 18,
+          }}
+        />
 
-          <button
-            type="submit"
-            disabled={busy}
+        <div style={{ marginBottom: 10, opacity: 0.9 }}>Password</div>
+        <input
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          type="password"
+          autoComplete="current-password"
+          style={{
+            width: "100%",
+            padding: "18px 18px",
+            borderRadius: 18,
+            border: "1px solid rgba(255,255,255,0.12)",
+            background: "rgba(235,242,255,1)",
+            color: "#000",
+            fontSize: 18,
+            outline: "none",
+            marginBottom: 18,
+          }}
+        />
+
+        <button
+          type="submit"
+          disabled={loading}
+          style={{
+            width: "100%",
+            padding: "18px 18px",
+            borderRadius: 18,
+            border: "1px solid rgba(255,255,255,0.10)",
+            background: loading ? "rgba(16,140,55,0.5)" : "#16a34a",
+            color: "#000",
+            fontWeight: 900,
+            fontSize: 22,
+            cursor: loading ? "not-allowed" : "pointer",
+          }}
+        >
+          {loading ? "Signing in..." : "Sign In"}
+        </button>
+
+        {err ? (
+          <div
             style={{
-              padding: "12px 16px",
+              marginTop: 14,
+              padding: 12,
               borderRadius: 14,
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: "#16a34a",
-              color: "#000",
-              fontWeight: 900,
-              cursor: busy ? "wait" : "pointer",
+              background: "rgba(255,0,0,0.12)",
+              border: "1px solid rgba(255,0,0,0.18)",
+              color: "rgba(255,220,220,0.95)",
+              fontWeight: 700,
             }}
           >
-            {busy ? "Signing in..." : "Sign In"}
-          </button>
-
-          {err && (
-            <div style={{ padding: 10, borderRadius: 12, background: "rgba(255,0,0,0.12)" }}>
-              {err}
-            </div>
-          )}
-        </form>
-      </div>
+            {err}
+          </div>
+        ) : (
+          <div style={{ marginTop: 14, opacity: 0.7 }}>
+            You must be in <span style={{ fontFamily: "monospace" }}>admin_users</span> to access admin pages.
+          </div>
+        )}
+      </form>
     </div>
   );
 }
