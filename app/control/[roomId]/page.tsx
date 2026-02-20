@@ -1,6 +1,6 @@
 import ControlClient from "./ControlClient";
 
-export default function Page({
+export default function ControlPage({
   params,
 }: {
   params: { roomId: string };
