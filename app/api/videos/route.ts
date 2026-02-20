@@ -13,88 +13,89 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+type VideoRow = {
+  id: string;
+  label: string;
+  playback_id: string;
+  sort_order: number | null;
+  active: boolean;
+  created_at?: string;
+};
+
 export async function GET(req: NextRequest) {
-  const search = req.nextUrl.searchParams.get("search")?.trim() || "";
-  const room = req.nextUrl.searchParams.get("room")?.trim() || "";
+  try {
+    const url = new URL(req.url);
+    const search = (url.searchParams.get("search") || "").trim();
+    const room = (url.searchParams.get("room") || "").trim();
 
-  // Base query for active videos
-  // NOTE: videos table: id, label, playback_id, sort_order, active, created_at
-  // If room is supplied, we filter to allowed labels for that room's licensee.
-  if (room) {
-    // 1) Find licensee_id for this room
-    const { data: lr, error: lrErr } = await supabase
-      .from("licensee_rooms")
-      .select("licensee_id")
-      .eq("room_id", room)
-      .maybeSingle();
+    // If room is provided, enforce license filtering:
+    // room -> licensee_rooms -> licensee_id -> licensee_video_access -> allowed labels
+    let allowedLabels: string[] | null = null;
 
-    if (lrErr) {
-      return NextResponse.json({ error: lrErr.message }, { status: 500 });
+    if (room) {
+      const { data: roomRow, error: roomErr } = await supabase
+        .from("licensee_rooms")
+        .select("licensee_id, status")
+        .eq("room_id", room)
+        .maybeSingle();
+
+      // If no room mapping, return empty list (acts like "no license")
+      if (roomErr) {
+        return NextResponse.json({ error: roomErr.message }, { status: 500 });
+      }
+      if (!roomRow) {
+        return NextResponse.json({ videos: [] }, { status: 200 });
+      }
+
+      // Optional: if you store status on licensee_rooms
+      if (roomRow.status && roomRow.status !== "active") {
+        return NextResponse.json({ videos: [] }, { status: 200 });
+      }
+
+      const { data: accessRows, error: accessErr } = await supabase
+        .from("licensee_video_access")
+        .select("video_label, status")
+        .eq("licensee_id", roomRow.licensee_id);
+
+      if (accessErr) {
+        return NextResponse.json({ error: accessErr.message }, { status: 500 });
+      }
+
+      allowedLabels =
+        (accessRows || [])
+          .filter((r: any) => !r.status || r.status === "active")
+          .map((r: any) => String(r.video_label || "").trim())
+          .filter(Boolean) ?? [];
     }
 
-    if (!lr?.licensee_id) {
-      // If room not registered to a licensee yet, return empty
-      return NextResponse.json({ videos: [] });
-    }
-
-    // 2) Get allowed labels for that licensee
-    const { data: allowed, error: aErr } = await supabase
-      .from("licensee_video_access")
-      .select("video_label")
-      .eq("licensee_id", lr.licensee_id)
-      .eq("status", "active");
-
-    if (aErr) {
-      return NextResponse.json({ error: aErr.message }, { status: 500 });
-    }
-
-    const labels = (allowed ?? [])
-      .map((x: any) => (x?.video_label ?? "").toString().trim())
-      .filter(Boolean);
-
-    if (labels.length === 0) {
-      return NextResponse.json({ videos: [] });
-    }
-
-    // 3) Pull videos that match those labels (and optional search)
     let q = supabase
       .from("videos")
-      .select("id,label,playback_id,sort_order,active")
-      .eq("active", true)
-      .in("label", labels)
-      .order("sort_order", { ascending: true, nullsFirst: false })
-      .order("created_at", { ascending: true });
+      .select("id,label,playback_id,sort_order,active,created_at")
+      .eq("active", true);
 
     if (search) {
       q = q.ilike("label", `%${search}%`);
     }
 
-    const { data: vids, error: vErr } = await q;
-
-    if (vErr) {
-      return NextResponse.json({ error: vErr.message }, { status: 500 });
+    if (allowedLabels) {
+      // If license exists but no labels, return none
+      if (allowedLabels.length === 0) {
+        return NextResponse.json({ videos: [] }, { status: 200 });
+      }
+      q = q.in("label", allowedLabels);
     }
 
-    return NextResponse.json({ videos: vids ?? [] });
+    const { data, error } = await q.order("sort_order", { ascending: true });
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ videos: (data || []) as VideoRow[] }, { status: 200 });
+  } catch (e: any) {
+    return NextResponse.json(
+      { error: e?.message || "Unexpected error" },
+      { status: 500 }
+    );
   }
-
-  // No room param: return full library (your current behavior)
-  let q = supabase
-    .from("videos")
-    .select("id,label,playback_id,sort_order,active")
-    .eq("active", true)
-    .order("sort_order", { ascending: true, nullsFirst: false })
-    .order("created_at", { ascending: true });
-
-  if (search) {
-    q = q.ilike("label", `%${search}%`);
-  }
-
-  const { data, error } = await q;
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ videos: data ?? [] });
 }
