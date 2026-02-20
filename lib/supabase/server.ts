@@ -1,13 +1,9 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
-async function getCookieStore(): Promise<any> {
-  const c: any = cookies();
-  return c && typeof c.then === "function" ? await c : c;
-}
-
 export async function supabaseServerAnon() {
-  const cookieStore = await getCookieStore();
+  // Next 16: cookies() may be Promise-wrapped in some contexts
+  const cookieStore = await cookies();
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -15,12 +11,17 @@ export async function supabaseServerAnon() {
   return createServerClient(url, anon, {
     cookies: {
       getAll() {
-        return cookieStore.getAll();
+        return (cookieStore as any).getAll?.() ?? [];
       },
       setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value, options }: any) => {
-          cookieStore.set(name, value, options);
-        });
+        // In Server Components this can be effectively read-only; don't crash the app
+        try {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            (cookieStore as any).set?.(name, value, options);
+          });
+        } catch {
+          // no-op
+        }
       },
     },
   });
