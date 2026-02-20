@@ -53,7 +53,7 @@ async function isPlaybackAllowedForRoom(
     .from("licensee_video_access")
     .select("video_label")
     .eq("licensee_id", licenseeId)
-    .eq("status", "active");
+  
 
   if (aErr) return false;
 
