@@ -1,23 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL =
-  process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ADMIN_API_KEY = process.env.ADMIN_API_KEY;
-
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  throw new Error(
-    "Missing SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) or SUPABASE_SERVICE_ROLE_KEY"
-  );
-}
-if (!ADMIN_API_KEY) throw new Error("Missing ADMIN_API_KEY");
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 function requireAdmin(req: NextRequest) {
   const key = (req.headers.get("x-admin-key") || "").trim();
-  return key && key === ADMIN_API_KEY;
+  return key && ADMIN_API_KEY && key === ADMIN_API_KEY;
 }
 
 function jsonError(message: string, status = 400) {
@@ -26,6 +14,24 @@ function jsonError(message: string, status = 400) {
 
 function clean(v: any) {
   return (v ?? "").toString().trim();
+}
+
+function getAdminSupabase():
+  | { ok: true; supabase: ReturnType<typeof createClient> }
+  | { ok: false; error: string } {
+  const SUPABASE_URL =
+    process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    return {
+      ok: false,
+      error:
+        "Missing SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) or SUPABASE_SERVICE_ROLE_KEY",
+    };
+  }
+
+  return { ok: true, supabase: createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY) };
 }
 
 /**
@@ -37,7 +43,12 @@ function clean(v: any) {
  * }
  */
 export async function POST(req: NextRequest) {
+  if (!ADMIN_API_KEY) return jsonError("Missing ADMIN_API_KEY", 500);
   if (!requireAdmin(req)) return jsonError("Unauthorized", 401);
+
+  const admin = getAdminSupabase();
+  if (!admin.ok) return jsonError(admin.error, 500);
+  const supabase = admin.supabase;
 
   const body = await req.json().catch(() => ({}));
   const deviceToken = clean(body?.device_token);
@@ -52,7 +63,7 @@ export async function POST(req: NextRequest) {
   };
   if (roomId !== undefined) patch.room_id = roomId;
 
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from("devices")
     .update(patch)
     .eq("device_token", deviceToken)

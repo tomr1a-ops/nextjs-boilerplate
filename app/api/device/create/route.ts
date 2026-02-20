@@ -5,10 +5,12 @@ import crypto from "crypto";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const supabase = createClient(
-  process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+function getAdminSupabase() {
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
+}
 
 function clean(v: unknown) {
   return (v ?? "").toString().trim();
@@ -24,6 +26,14 @@ function makeToken() {
 }
 
 export async function POST(request: Request) {
+  const supabase = getAdminSupabase();
+  if (!supabase) {
+    return NextResponse.json(
+      { error: "Missing SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) or SUPABASE_SERVICE_ROLE_KEY" },
+      { status: 500 }
+    );
+  }
+
   const body = await request.json().catch(() => ({}));
   const room_id = clean((body as any).room_id) || "studioA";
   const name = clean((body as any).name) || room_id;
@@ -32,7 +42,7 @@ export async function POST(request: Request) {
   let pairing_code = "";
   for (let i = 0; i < 10; i++) {
     const candidate = makePairingCode();
-    const { data } = await supabase
+    const { data } = await (supabase as any)
       .from("devices")
       .select("id")
       .eq("pairing_code", candidate)
@@ -59,7 +69,7 @@ export async function POST(request: Request) {
    * Your existing devices table has NOT NULL constraints on some legacy columns
    * like `action`, so we must provide real values (not null).
    */
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from("devices")
     .upsert(
       {

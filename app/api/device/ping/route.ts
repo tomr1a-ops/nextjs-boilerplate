@@ -4,10 +4,12 @@ import { createClient } from "@supabase/supabase-js";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const supabase = createClient(
-  process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+function getAdminSupabase() {
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
+}
 
 function clean(v: unknown) {
   return (v ?? "").toString().trim();
@@ -20,6 +22,14 @@ function clean(v: unknown) {
  * }
  */
 export async function POST(request: Request) {
+  const supabase = getAdminSupabase();
+  if (!supabase) {
+    return NextResponse.json(
+      { error: "Missing SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) or SUPABASE_SERVICE_ROLE_KEY" },
+      { status: 500 }
+    );
+  }
+
   const body = await request.json().catch(() => ({}));
   const device_token = clean((body as any).device_token);
 
@@ -29,7 +39,7 @@ export async function POST(request: Request) {
 
   const nowIso = new Date().toISOString();
 
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from("devices")
     .update({ last_seen: nowIso })
     .eq("device_token", device_token)
@@ -43,4 +53,3 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ ok: true, room_id: data.room_id, last_seen: data.last_seen });
 }
-

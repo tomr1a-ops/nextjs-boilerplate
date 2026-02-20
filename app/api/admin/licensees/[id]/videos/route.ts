@@ -1,23 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL =
-  process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ADMIN_API_KEY = process.env.ADMIN_API_KEY;
-
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  throw new Error(
-    "Missing SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) or SUPABASE_SERVICE_ROLE_KEY"
-  );
-}
-if (!ADMIN_API_KEY) throw new Error("Missing ADMIN_API_KEY");
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 function requireAdmin(req: NextRequest) {
   const key = (req.headers.get("x-admin-key") || "").trim();
-  return key && key === ADMIN_API_KEY;
+  return key && ADMIN_API_KEY && key === ADMIN_API_KEY;
 }
 
 function jsonError(message: string, status = 400) {
@@ -28,6 +16,24 @@ function clean(v: any) {
   return (v ?? "").toString().trim();
 }
 
+function getAdminSupabase():
+  | { ok: true; supabase: ReturnType<typeof createClient> }
+  | { ok: false; error: string } {
+  const SUPABASE_URL =
+    process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    return {
+      ok: false,
+      error:
+        "Missing SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) or SUPABASE_SERVICE_ROLE_KEY",
+    };
+  }
+
+  return { ok: true, supabase: createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY) };
+}
+
 // Supports Next versions where params may be Promise-wrapped
 async function getLicenseeId(ctx: any): Promise<string> {
   const p = ctx?.params;
@@ -36,12 +42,17 @@ async function getLicenseeId(ctx: any): Promise<string> {
 }
 
 export async function GET(req: NextRequest, ctx: any) {
+  if (!ADMIN_API_KEY) return jsonError("Missing ADMIN_API_KEY", 500);
   if (!requireAdmin(req)) return jsonError("Unauthorized", 401);
+
+  const admin = getAdminSupabase();
+  if (!admin.ok) return jsonError(admin.error, 500);
+  const supabase = admin.supabase;
 
   const licenseeId = await getLicenseeId(ctx);
   if (!licenseeId) return jsonError("Missing licensee id", 400);
 
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from("licensee_video_access")
     .select("video_label,created_at")
     .eq("licensee_id", licenseeId)
@@ -57,7 +68,12 @@ export async function GET(req: NextRequest, ctx: any) {
 
 // Add one label: { video_label: "A1V1" }
 export async function POST(req: NextRequest, ctx: any) {
+  if (!ADMIN_API_KEY) return jsonError("Missing ADMIN_API_KEY", 500);
   if (!requireAdmin(req)) return jsonError("Unauthorized", 401);
+
+  const admin = getAdminSupabase();
+  if (!admin.ok) return jsonError(admin.error, 500);
+  const supabase = admin.supabase;
 
   const licenseeId = await getLicenseeId(ctx);
   const body = await req.json().catch(() => ({}));
@@ -66,7 +82,7 @@ export async function POST(req: NextRequest, ctx: any) {
   if (!licenseeId) return jsonError("Missing licensee id", 400);
   if (!videoLabel) return jsonError("Missing video_label", 400);
 
-  const { error } = await supabase
+  const { error } = await (supabase as any)
     .from("licensee_video_access")
     .insert({ licensee_id: licenseeId, video_label: videoLabel });
 
@@ -77,7 +93,12 @@ export async function POST(req: NextRequest, ctx: any) {
 
 // Replace all labels: { video_labels: ["A1V1","A1V2"] }
 export async function PUT(req: NextRequest, ctx: any) {
+  if (!ADMIN_API_KEY) return jsonError("Missing ADMIN_API_KEY", 500);
   if (!requireAdmin(req)) return jsonError("Unauthorized", 401);
+
+  const admin = getAdminSupabase();
+  if (!admin.ok) return jsonError(admin.error, 500);
+  const supabase = admin.supabase;
 
   const licenseeId = await getLicenseeId(ctx);
   const body = await req.json().catch(() => ({}));
@@ -90,7 +111,7 @@ export async function PUT(req: NextRequest, ctx: any) {
   if (!licenseeId) return jsonError("Missing licensee id", 400);
   if (!labels) return jsonError("Missing video_labels[]", 400);
 
-  const { error: delErr } = await supabase
+  const { error: delErr } = await (supabase as any)
     .from("licensee_video_access")
     .delete()
     .eq("licensee_id", licenseeId);
@@ -104,7 +125,7 @@ export async function PUT(req: NextRequest, ctx: any) {
     video_label,
   }));
 
-  const { error: insErr } = await supabase
+  const { error: insErr } = await (supabase as any)
     .from("licensee_video_access")
     .insert(rows);
 
@@ -115,15 +136,21 @@ export async function PUT(req: NextRequest, ctx: any) {
 
 // Remove one label: ?video_label=A1V1
 export async function DELETE(req: NextRequest, ctx: any) {
+  if (!ADMIN_API_KEY) return jsonError("Missing ADMIN_API_KEY", 500);
   if (!requireAdmin(req)) return jsonError("Unauthorized", 401);
 
-  const licenseeId = await getLicenseeId(ctx);
-  const videoLabel = clean(req.nextUrl.searchParams.get("video_label")).toUpperCase();
+  const admin = getAdminSupabase();
+  if (!admin.ok) return jsonError(admin.error, 500);
+  const supabase = admin.supabase;
 
+  const licenseeId = await getLicenseeId(ctx);
   if (!licenseeId) return jsonError("Missing licensee id", 400);
+
+  const url = new URL(req.url);
+  const videoLabel = clean(url.searchParams.get("video_label")).toUpperCase();
   if (!videoLabel) return jsonError("Missing video_label", 400);
 
-  const { error } = await supabase
+  const { error } = await (supabase as any)
     .from("licensee_video_access")
     .delete()
     .eq("licensee_id", licenseeId)

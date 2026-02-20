@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 type VideoRow = {
@@ -10,16 +10,21 @@ type VideoRow = {
   active: boolean;
 };
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+function getBrowserSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
+}
 
 export default function LibraryPage() {
   const [videos, setVideos] = useState<VideoRow[]>([]);
   const [selected, setSelected] = useState<VideoRow | null>(null);
   const [err, setErr] = useState<string>("");
   const [busy, setBusy] = useState<boolean>(false);
+
+  // keep one supabase instance for the browser session (created lazily)
+  const supabaseRef = useRef<any>(null);
 
   const roomId = "studioA";
 
@@ -35,12 +40,24 @@ export default function LibraryPage() {
     document.head.appendChild(s);
   }, []);
 
-  // Load videos list from Supabase
+  // Init supabase + load videos list
   useEffect(() => {
     let alive = true;
+
     (async () => {
       setErr("");
-      const { data, error } = await supabase
+
+      if (!supabaseRef.current) {
+        supabaseRef.current = getBrowserSupabase();
+      }
+      const supabase = supabaseRef.current;
+
+      if (!supabase) {
+        setErr("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY");
+        return;
+      }
+
+      const { data, error } = await (supabase as any)
         .from("videos")
         .select("label, playback_id, sort_order, active")
         .eq("active", true)
@@ -202,16 +219,9 @@ export default function LibraryPage() {
                   ></mux-player>`,
                 }}
               />
-
-              <div style={{ marginTop: 10, fontSize: 12, opacity: 0.8 }}>
-                Direct HLS URL:{" "}
-                <span style={{ fontFamily: "monospace" }}>
-                  https://stream.mux.com/{selected.playback_id}.m3u8
-                </span>
-              </div>
             </>
           ) : (
-            <div style={{ opacity: 0.8 }}>Loading…</div>
+            <div style={{ opacity: 0.8 }}>No video selected</div>
           )}
         </div>
       </div>

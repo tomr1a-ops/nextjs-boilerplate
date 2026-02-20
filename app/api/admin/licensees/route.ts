@@ -1,25 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL =
-  process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ADMIN_API_KEY = process.env.ADMIN_API_KEY;
-
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  throw new Error(
-    "Missing SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) or SUPABASE_SERVICE_ROLE_KEY"
-  );
-}
-if (!ADMIN_API_KEY) {
-  throw new Error("Missing ADMIN_API_KEY");
-}
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 function requireAdmin(req: NextRequest) {
   const key = (req.headers.get("x-admin-key") || "").trim();
-  return key && key === ADMIN_API_KEY;
+  return key && ADMIN_API_KEY && key === ADMIN_API_KEY;
 }
 
 function jsonError(message: string, status = 400) {
@@ -30,13 +16,36 @@ function clean(v: any) {
   return (v ?? "").toString().trim();
 }
 
+function getAdminSupabase():
+  | { ok: true; supabase: ReturnType<typeof createClient> }
+  | { ok: false; error: string } {
+  const SUPABASE_URL =
+    process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    return {
+      ok: false,
+      error:
+        "Missing SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) or SUPABASE_SERVICE_ROLE_KEY",
+    };
+  }
+
+  return { ok: true, supabase: createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY) };
+}
+
 export async function GET(req: NextRequest) {
+  if (!ADMIN_API_KEY) return jsonError("Missing ADMIN_API_KEY", 500);
   if (!requireAdmin(req)) return jsonError("Unauthorized", 401);
+
+  const admin = getAdminSupabase();
+  if (!admin.ok) return jsonError(admin.error, 500);
+  const supabase = admin.supabase;
 
   const status = clean(req.nextUrl.searchParams.get("status")); // optional: active/disabled
   const search = clean(req.nextUrl.searchParams.get("search")); // optional: matches name/code
 
-  let q = supabase
+  let q = (supabase as any)
     .from("licensees")
     .select("id,name,code,status,created_at")
     .order("created_at", { ascending: false });
@@ -54,7 +63,12 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  if (!ADMIN_API_KEY) return jsonError("Missing ADMIN_API_KEY", 500);
   if (!requireAdmin(req)) return jsonError("Unauthorized", 401);
+
+  const admin = getAdminSupabase();
+  if (!admin.ok) return jsonError(admin.error, 500);
+  const supabase = admin.supabase;
 
   const body = await req.json().catch(() => ({}));
   const name = clean(body?.name);
@@ -66,7 +80,7 @@ export async function POST(req: NextRequest) {
   if (!["active", "disabled"].includes(status))
     return jsonError("Invalid status (active|disabled)", 400);
 
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from("licensees")
     .insert({ name, code, status })
     .select("id,name,code,status,created_at")
@@ -78,7 +92,12 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  if (!ADMIN_API_KEY) return jsonError("Missing ADMIN_API_KEY", 500);
   if (!requireAdmin(req)) return jsonError("Unauthorized", 401);
+
+  const admin = getAdminSupabase();
+  if (!admin.ok) return jsonError(admin.error, 500);
+  const supabase = admin.supabase;
 
   const body = await req.json().catch(() => ({}));
   const id = clean(body?.id);
@@ -109,7 +128,7 @@ export async function PATCH(req: NextRequest) {
     return jsonError("No fields to update", 400);
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from("licensees")
     .update(patch)
     .eq("id", id)

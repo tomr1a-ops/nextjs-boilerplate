@@ -1,20 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL =
-  process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  throw new Error(
-    "Missing SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) or SUPABASE_SERVICE_ROLE_KEY"
-  );
+function getAdminSupabase() {
+  const SUPABASE_URL =
+    process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
+  return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-
 // If controller sometimes posts a label like "AL1V1", translate it to mux playback_id
-async function normalizePlaybackId(playbackOrLabel: string | null) {
+async function normalizePlaybackId(supabase: any, playbackOrLabel: string | null) {
   if (!playbackOrLabel) return null;
 
   const looksLikeLabel = playbackOrLabel.length <= 16;
@@ -31,7 +27,7 @@ async function normalizePlaybackId(playbackOrLabel: string | null) {
   return data?.playback_id || playbackOrLabel;
 }
 
-async function getLicenseeIdForRoom(room: string): Promise<string | null> {
+async function getLicenseeIdForRoom(supabase: any, room: string): Promise<string | null> {
   const { data, error } = await supabase
     .from("licensee_rooms")
     .select("licensee_id")
@@ -42,10 +38,14 @@ async function getLicenseeIdForRoom(room: string): Promise<string | null> {
   return (data?.licensee_id ?? null) as string | null;
 }
 
-async function isPlaybackAllowedForRoom(room: string, playbackId: string | null): Promise<boolean> {
+async function isPlaybackAllowedForRoom(
+  supabase: any,
+  room: string,
+  playbackId: string | null
+): Promise<boolean> {
   if (!playbackId) return true; // stopping is always allowed
 
-  const licenseeId = await getLicenseeIdForRoom(room);
+  const licenseeId = await getLicenseeIdForRoom(supabase, room);
   if (!licenseeId) return false;
 
   // Get allowed labels
@@ -82,12 +82,20 @@ async function isPlaybackAllowedForRoom(room: string, playbackId: string | null)
 }
 
 export async function GET(req: NextRequest) {
+  const supabase = getAdminSupabase();
+  if (!supabase) {
+    return NextResponse.json(
+      { error: "Missing SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) or SUPABASE_SERVICE_ROLE_KEY" },
+      { status: 500 }
+    );
+  }
+
   const room = req.nextUrl.searchParams.get("room");
   if (!room) {
     return NextResponse.json({ error: "Missing room" }, { status: 400 });
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from("room_sessions")
     .select("*")
     .eq("room_id", room)
@@ -98,7 +106,7 @@ export async function GET(req: NextRequest) {
   }
 
   if (!data) {
-    const { data: created, error: createErr } = await supabase
+    const { data: created, error: createErr } = await (supabase as any)
       .from("room_sessions")
       .insert({
         room_id: room,
@@ -126,6 +134,14 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const supabase = getAdminSupabase();
+  if (!supabase) {
+    return NextResponse.json(
+      { error: "Missing SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) or SUPABASE_SERVICE_ROLE_KEY" },
+      { status: 500 }
+    );
+  }
+
   const room = req.nextUrl.searchParams.get("room");
   if (!room) {
     return NextResponse.json({ error: "Missing room" }, { status: 400 });
@@ -139,7 +155,7 @@ export async function POST(req: NextRequest) {
   const command = body?.command as string | undefined;
 
   // Ensure row exists
-  const { data: existing, error: readErr } = await supabase
+  const { data: existing, error: readErr } = await (supabase as any)
     .from("room_sessions")
     .select("*")
     .eq("room_id", room)
@@ -150,7 +166,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (!existing) {
-    const { error: createErr } = await supabase.from("room_sessions").insert({
+    const { error: createErr } = await (supabase as any).from("room_sessions").insert({
       room_id: room,
       state: "stopped",
       playback_id: null,
@@ -175,7 +191,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid seek_delta value" }, { status: 400 });
     }
 
-    const { data: cur, error: curErr } = await supabase
+    const { data: cur, error: curErr } = await (supabase as any)
       .from("room_sessions")
       .select("command_id")
       .eq("room_id", room)
@@ -187,7 +203,7 @@ export async function POST(req: NextRequest) {
 
     const nextId = Number(cur.command_id || 0) + 1;
 
-    const { error: updErr } = await supabase
+    const { error: updErr } = await (supabase as any)
       .from("room_sessions")
       .update({
         command_id: nextId,
@@ -212,11 +228,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing state (or command)" }, { status: 400 });
   }
 
-  const playback_id = await normalizePlaybackId(playbackRaw ?? null);
+  const playback_id = await normalizePlaybackId(supabase as any, playbackRaw ?? null);
 
   // ✅ ENFORCEMENT: block playing unlicensed content
   if (state !== "stopped") {
-    const ok = await isPlaybackAllowedForRoom(room, playback_id);
+    const ok = await isPlaybackAllowedForRoom(supabase as any, room, playback_id);
     if (!ok) {
       return NextResponse.json(
         { error: "Video not allowed for this room/licensee" },
@@ -229,18 +245,22 @@ export async function POST(req: NextRequest) {
 
   const patch: Record<string, any> = {
     state,
-    playback_id: state === "stopped" ? null : playback_id,
+    playback_id: playback_id ?? null,
     updated_at: now,
   };
 
-  if (state === "playing") patch.started_at = now;
-  if (state === "paused") patch.paused_at = now;
-  if (state === "stopped") {
+  if (state === "playing") {
+    patch.started_at = now;
+    patch.paused_at = null;
+  } else if (state === "paused") {
+    patch.paused_at = now;
+  } else if (state === "stopped") {
     patch.started_at = null;
     patch.paused_at = null;
+    patch.seek_seconds = 0;
   }
 
-  const { error: updErr } = await supabase
+  const { error: updErr } = await (supabase as any)
     .from("room_sessions")
     .update(patch)
     .eq("room_id", room);

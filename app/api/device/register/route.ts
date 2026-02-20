@@ -5,10 +5,12 @@ import crypto from "crypto";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const supabase = createClient(
-  process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+function getAdminSupabase() {
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
+}
 
 function clean(v: unknown) {
   return (v ?? "").toString().trim();
@@ -19,6 +21,14 @@ function makeToken() {
 }
 
 export async function POST(request: Request) {
+  const supabase = getAdminSupabase();
+  if (!supabase) {
+    return NextResponse.json(
+      { error: "Missing SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) or SUPABASE_SERVICE_ROLE_KEY" },
+      { status: 500 }
+    );
+  }
+
   const body = await request.json().catch(() => ({}));
   const pairing_code = clean((body as any).pairing_code);
   const device_id = clean((body as any).device_id);
@@ -30,7 +40,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { data: deviceRow, error: findErr } = await supabase
+  const { data: deviceRow, error: findErr } = await (supabase as any)
     .from("devices")
     .select("*")
     .eq("pairing_code", pairing_code)
@@ -46,7 +56,7 @@ export async function POST(request: Request) {
 
   const newToken = makeToken();
 
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from("devices")
     .update({
       device_id,
@@ -70,4 +80,3 @@ export async function POST(request: Request) {
     device_token: data.device_token,
   });
 }
-
