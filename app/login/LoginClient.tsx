@@ -26,18 +26,14 @@ export default function LoginClient() {
     setLoading(true);
     try {
       const supabase = supabaseBrowser();
-
       const { error } = await supabase.auth.signInWithPassword({
         email: e1,
         password: p1,
       });
 
-      if (error) {
-        setErr(error.message || "Login failed");
-        return;
-      }
+      if (error) throw error;
 
-      // IMPORTANT: hard navigation so server sees cookies
+      // hard navigation so server sees auth cookies immediately
       window.location.href = "/admin";
     } catch (ex: any) {
       setErr(ex?.message || "Login failed");
@@ -61,7 +57,7 @@ export default function LoginClient() {
       <form
         onSubmit={onSubmit}
         style={{
-          width: "min(520px, 100%)",
+          width: "min(680px, 100%)",
           background: "rgba(255,255,255,0.04)",
           border: "1px solid rgba(255,255,255,0.10)",
           borderRadius: 24,
@@ -69,15 +65,32 @@ export default function LoginClient() {
           boxShadow: "0 20px 80px rgba(0,0,0,0.45)",
         }}
       >
-        <div style={{ fontSize: 40, fontWeight: 900, marginBottom: 18 }}>
+        <div style={{ fontSize: 44, fontWeight: 900, marginBottom: 18 }}>
           IMAOS Admin Login
         </div>
+
+        {err ? (
+          <div
+            style={{
+              marginBottom: 14,
+              padding: 12,
+              borderRadius: 12,
+              background: "rgba(255,0,0,0.12)",
+              border: "1px solid rgba(255,0,0,0.18)",
+              color: "rgba(255,220,220,0.95)",
+              fontWeight: 700,
+            }}
+          >
+            {err}
+          </div>
+        ) : null}
 
         <div style={{ marginBottom: 10, opacity: 0.9 }}>Email</div>
         <input
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           autoComplete="email"
+          inputMode="email"
           style={{
             width: "100%",
             padding: "18px 18px",
@@ -117,36 +130,20 @@ export default function LoginClient() {
             width: "100%",
             padding: "18px 18px",
             borderRadius: 18,
-            border: "1px solid rgba(255,255,255,0.10)",
-            background: loading ? "rgba(16,140,55,0.5)" : "#16a34a",
+            border: "none",
+            background: loading ? "rgba(0,200,80,0.55)" : "#16a34a",
             color: "#000",
-            fontWeight: 900,
             fontSize: 22,
+            fontWeight: 900,
             cursor: loading ? "not-allowed" : "pointer",
           }}
         >
           {loading ? "Signing in..." : "Sign In"}
         </button>
 
-        {err ? (
-          <div
-            style={{
-              marginTop: 14,
-              padding: 12,
-              borderRadius: 14,
-              background: "rgba(255,0,0,0.12)",
-              border: "1px solid rgba(255,0,0,0.18)",
-              color: "rgba(255,220,220,0.95)",
-              fontWeight: 700,
-            }}
-          >
-            {err}
-          </div>
-        ) : (
-          <div style={{ marginTop: 14, opacity: 0.7 }}>
-            You must be in <span style={{ fontFamily: "monospace" }}>admin_users</span> to access admin pages.
-          </div>
-        )}
+        <div style={{ marginTop: 14, opacity: 0.65 }}>
+          You must be in <code>admin_users</code> to access admin pages.
+        </div>
       </form>
     </div>
   );
