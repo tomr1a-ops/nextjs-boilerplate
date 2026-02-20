@@ -9,13 +9,21 @@ function clean(input: string) {
   return (input || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
 }
 
+type VideoOut = {
+  label: string;
+  title?: string | null;
+  url?: string | null;
+  playback_id?: string | null;
+  sort_order?: number | null;
+  active?: boolean | null;
+  id?: string;
+  created_at?: string;
+};
+
 export async function GET(req: Request) {
   try {
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-      return NextResponse.json(
-        { error: "Supabase env vars missing" },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: "Supabase env vars missing" }, { status: 500 });
     }
 
     const { searchParams } = new URL(req.url);
@@ -23,22 +31,10 @@ export async function GET(req: Request) {
     const room = clean(roomRaw);
 
     if (!room) {
-      return NextResponse.json(
-        { error: "Missing room parameter" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Missing room parameter" }, { status: 400 });
     }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-    /**
-     * Schema assumptions based on your handoff:
-     * - licensee_rooms: room_id -> licensee_id
-     * - licensee_video_access: (licensee_id, label) or similar
-     * - videos: master list keyed by label
-     *
-     * We only need labels allowed for the licensee owning this room.
-     */
 
     // 1) room -> licensee_id
     const { data: roomRow, error: roomErr } = await supabase
@@ -48,15 +44,12 @@ export async function GET(req: Request) {
       .maybeSingle();
 
     if (roomErr) {
-      return NextResponse.json(
-        { error: roomErr.message },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: roomErr.message }, { status: 500 });
     }
 
     if (!roomRow?.licensee_id) {
       return NextResponse.json(
-        { build: "videos-v3-no-status", room, videos: [] },
+        { build: "videos-v3-no-status", room, videos: [] as VideoOut[] },
         { status: 200 }
       );
     }
@@ -70,64 +63,72 @@ export async function GET(req: Request) {
       .eq("licensee_id", licenseeId);
 
     if (accessErr) {
-      return NextResponse.json(
-        { error: accessErr.message },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: accessErr.message }, { status: 500 });
     }
 
     const labels = (accessRows || [])
-      .map((r: any) => r.label)
+      .map((r: any) => r.label as string)
       .filter(Boolean);
 
     if (labels.length === 0) {
       return NextResponse.json(
-        { build: "videos-v3-no-status", room, videos: [] },
+        { build: "videos-v3-no-status", room, videos: [] as VideoOut[] },
         { status: 200 }
       );
     }
 
-    // 3) label -> video metadata (optional)
-    // If your `videos` table has more fields, include them here.
+    // 3) Pull master video metadata (include whatever columns you actually have)
+    // Your current production response shows: id,label,playback_id,sort_order,active,created_at
     const { data: videoRows, error: videosErr } = await supabase
       .from("videos")
-      .select("label, title, url")
+      .select("id,label,playback_id,sort_order,active,created_at")
       .in("label", labels)
-      .order("label", { ascending: true });
+      .order("sort_order", { ascending: true });
 
+    // If metadata lookup fails, still return labels
     if (videosErr) {
-      // even if videos lookup fails, return at least labels
       return NextResponse.json(
         {
           build: "videos-v3-no-status",
           room,
-          videos: labels.sort().map((label) => ({ label })),
+          videos: labels.sort().map((label) => ({ label } as VideoOut)),
           warning: videosErr.message,
         },
         { status: 200 }
       );
     }
 
-    // Ensure only allowed labels get returned even if videos table contains extras
     const allowedSet = new Set(labels);
-    const videos = (videoRows || []).filter((v: any) => allowedSet.has(v.label));
+    const rows = (videoRows || []).filter((v: any) => allowedSet.has(v.label));
 
-    // If videos table is missing some labels, preserve them as label-only rows
-    const returnedSet = new Set(videos.map((v: any) => v.label));
+    // Build output that can include label-only rows for missing metadata
+    const out: VideoOut[] = rows.map((v: any) => ({
+      id: v.id,
+      label: v.label,
+      playback_id: v.playback_id,
+      sort_order: v.sort_order,
+      active: v.active,
+      created_at: v.created_at,
+    }));
+
+    const returnedSet = new Set(out.map((v) => v.label));
     for (const label of labels) {
-      if (!returnedSet.has(label)) videos.push({ label });
+      if (!returnedSet.has(label)) out.push({ label });
     }
 
-    videos.sort((a: any, b: any) => String(a.label).localeCompare(String(b.label)));
+    // Sort deterministically (prefer sort_order if present, else label)
+    out.sort((a, b) => {
+      const ao = a.sort_order ?? 999999;
+      const bo = b.sort_order ?? 999999;
+      if (ao !== bo) return ao - bo;
+      return a.label.localeCompare(b.label);
+    });
 
     return NextResponse.json(
-      { build: "videos-v3-no-status", room, videos },
+      { build: "videos-v3-no-status", room, videos: out },
       { status: 200 }
     );
   } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message || "Unknown error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: e?.message || "Unknown error" }, { status: 500 });
   }
 }
