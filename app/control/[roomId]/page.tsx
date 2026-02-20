@@ -1,11 +1,6 @@
 import ControlClient from "./ControlClient";
 
-export default function ControlPage({ params }: { params: { roomId?: string } }) {
-  const rid = params?.roomId ?? "(missing)";
-  return (
-    <>
-      <div style={{ display: "none" }} data-server-roomid={rid} />
-      <ControlClient roomId={rid} />
-    </>
-  );
+export default function ControlPage({ params }: { params: { roomId: string } }) {
+  // Server component: params.roomId should always exist for /control/<roomId>
+  return <ControlClient roomId={params.roomId} />;
 }
