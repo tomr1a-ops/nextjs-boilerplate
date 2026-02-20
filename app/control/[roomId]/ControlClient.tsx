@@ -22,19 +22,17 @@ function clean(v: any) {
   return (v ?? "").toString().trim();
 }
 
-function getRoomFromPath(): string {
-  try {
-    if (typeof window === "undefined") return "";
-    const parts = window.location.pathname.split("/").filter(Boolean);
-    // /control/<roomId>
-    return parts[0] === "control" ? (parts[1] || "") : (parts[parts.length - 1] || "");
-  } catch {
-    return "";
-  }
+function activeGlow(isActive: boolean) {
+  return isActive
+    ? {
+        boxShadow:
+          "0 0 0 2px rgba(0,255,140,0.25), 0 0 22px rgba(0,255,140,0.22)",
+      }
+    : {};
 }
 
-export default function ControlClient({ roomId: roomIdProp }: { roomId?: string }) {
-  const roomId = clean(roomIdProp) || clean(getRoomFromPath()) || "studioA";
+export default function ControlClient({ roomId }: { roomId: string }) {
+  const rid = clean(roomId) || "studioA";
 
   const [videos, setVideos] = useState<VideoRow[]>([]);
   const [search, setSearch] = useState("");
@@ -42,229 +40,191 @@ export default function ControlClient({ roomId: roomIdProp }: { roomId?: string 
   const [remotePlaybackId, setRemotePlaybackId] = useState<string>("");
   const [err, setErr] = useState<string>("");
 
+  // tiny visual feedback for FF/RW
   const [flash, setFlash] = useState<"rw" | "ff" | null>(null);
-  const [clicked, setClicked] = useState<"play" | "pause" | "stop" | null>(null);
-  const [activeLabel, setActiveLabel] = useState<string>("");
-
-  function activeGlow(on: boolean) {
-    return on
-      ? {
-          boxShadow: "0 0 0 3px rgba(0,255,140,0.35), 0 0 18px rgba(0,255,140,0.18)",
-        }
-      : {};
-  }
 
   async function loadVideos() {
     setErr("");
     try {
-      const res = await fetch(`/api/videos?room=${encodeURIComponent(roomId)}&t=${Date.now()}`, {
+      const res = await fetch(`/api/videos?room=${encodeURIComponent(rid)}&t=${Date.now()}`, {
         cache: "no-store",
       });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        setErr(j?.error ? String(j.error) : `videos failed: ${res.status}`);
-        setVideos([]);
-        return;
-      }
       const j = await res.json();
-      setVideos(Array.isArray(j?.videos) ? j.videos : []);
+      if (!res.ok) throw new Error(j?.error || `videos failed: ${res.status}`);
+      setVideos((j?.videos || []) as VideoRow[]);
     } catch (e: any) {
-      setErr(e?.message || "videos failed");
+      setErr(e?.message || "Failed to load videos");
       setVideos([]);
     }
   }
 
-  async function refreshSession() {
+  async function loadSession() {
     try {
-      const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}&t=${Date.now()}`, {
+      const res = await fetch(`/api/session?room=${encodeURIComponent(rid)}&t=${Date.now()}`, {
         cache: "no-store",
       });
-      if (!res.ok) return;
-      const data = (await res.json()) as SessionData;
-      setRemoteState(clean(data.state) || "unknown");
-      setRemotePlaybackId(clean(data.playback_id));
-    } catch {}
+      const j = await res.json();
+      if (!res.ok) throw new Error(j?.error || `session failed: ${res.status}`);
+      const s = (j?.session || {}) as SessionData;
+      setRemoteState((s?.state || "stopped") as string);
+      setRemotePlaybackId((s?.playback_id || "") as string);
+    } catch {
+      // don't hard-fail the UI if session endpoint is temporarily down
+    }
   }
 
   useEffect(() => {
     loadVideos();
-    refreshSession();
-    const id = window.setInterval(() => {
-      refreshSession();
-    }, 1000);
-    return () => window.clearInterval(id);
+    loadSession();
+    const t = setInterval(loadSession, 1500);
+    return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId]);
+  }, [rid]);
 
   const filtered = useMemo(() => {
-    const q = clean(search).toLowerCase();
-    if (!q) return videos;
-    return videos.filter((v) => v.label.toLowerCase().includes(q));
+    const s = search.trim().toLowerCase();
+    if (!s) return videos;
+    return videos.filter((v) => v.label.toLowerCase().includes(s));
   }, [videos, search]);
 
-  async function postState(state: "playing" | "paused" | "stopped", playback_id?: string | null) {
+  async function post(path: string, body: any) {
     setErr("");
+    const res = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}),
+    });
+    const txt = await res.text();
+    let j: any = null;
     try {
-      const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ state, playback_id: playback_id ?? null }),
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        setErr(j?.error ? JSON.stringify(j) : `command failed: ${res.status}`);
-        return;
-      }
-      await refreshSession();
+      j = txt ? JSON.parse(txt) : null;
+    } catch {
+      j = { raw: txt };
+    }
+    if (!res.ok) {
+      throw new Error(j?.error || `HTTP ${res.status}`);
+    }
+    return j;
+  }
+
+  async function playLabel(label: string) {
+    try {
+      await post(`/api/control/play`, { room: rid, video_label: label });
+      await loadSession();
     } catch (e: any) {
-      setErr(e?.message || "command failed");
+      setErr(e?.message || "Play failed");
     }
   }
 
-  async function seekDelta(delta: number) {
-    setErr("");
+  async function sendAction(action: "pause" | "stop" | "rewind" | "forward") {
     try {
-      const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ command: "seek_delta", value: delta }),
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        setErr(j?.error ? JSON.stringify(j) : `seek failed: ${res.status}`);
-        return;
+      if (action === "rewind") setFlash("rw");
+      if (action === "forward") setFlash("ff");
+
+      await post(`/api/control/${action}`, { room: rid });
+
+      if (action === "rewind" || action === "forward") {
+        setTimeout(() => setFlash(null), 200);
       }
+
+      await loadSession();
     } catch (e: any) {
-      setErr(e?.message || "seek failed");
+      setErr(e?.message || `${action} failed`);
+      setFlash(null);
     }
   }
-
-  const isPlaying = remoteState === "playing";
-  const isPaused = remoteState === "paused";
-  const isStopped = remoteState === "stopped";
 
   return (
-    <div style={{ minHeight: "100vh", background: "#000", color: "#fff", padding: 28 }}>
-      <div style={{ maxWidth: 1220, margin: "0 auto" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h1 style={{ fontSize: 44, margin: 0, letterSpacing: 0.5 }}>
-            IMAOS Control — <span style={{ opacity: 0.85 }}>{roomId}</span>
-          </h1>
-
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "radial-gradient(1200px 700px at 20% 0%, rgba(255,255,255,0.06), rgba(0,0,0,1) 60%)",
+        color: "#fff",
+        padding: "46px 28px 80px",
+        fontFamily:
+          'system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"',
+      }}
+    >
+      <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 18 }}>
+          <div style={{ fontSize: 44, fontWeight: 900, letterSpacing: -0.8 }}>
+            IMAOS Control — <span style={{ opacity: 0.85 }}>{rid}</span>
+          </div>
           <div
             style={{
-              padding: "10px 16px",
-              background: "rgba(255,255,255,0.08)",
-              border: "1px solid rgba(255,255,255,0.12)",
-              borderRadius: 999,
-              fontWeight: 900,
+              padding: "10px 14px",
+              borderRadius: 14,
+              background: "rgba(255,255,255,0.06)",
+              border: "1px solid rgba(255,255,255,0.10)",
+              fontSize: 16,
+              fontWeight: 700,
             }}
           >
             State: <span style={{ opacity: 0.9 }}>{remoteState}</span>
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 14, marginTop: 22, alignItems: "center" }}>
+        {/* TOP CONTROLS (NO PLAY BUTTON) */}
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 26, marginBottom: 18 }}>
           <button
-            onClick={() => {
-              setClicked("play");
-              setTimeout(() => setClicked(null), 220);
-              postState("playing", remotePlaybackId || null);
-            }}
+            onClick={() => sendAction("pause")}
             style={{
-              padding: "18px 34px",
-              borderRadius: 18,
+              padding: "16px 28px",
+              borderRadius: 16,
               border: "1px solid rgba(255,255,255,0.18)",
-              background: "#1d7f22",
-              color: "#000",
-              fontSize: 22,
-              fontWeight: 950,
-              cursor: "pointer",
-              ...(clicked === "play" || isPlaying ? activeGlow(true) : {}),
-            }}
-          >
-            PLAY
-          </button>
-
-          <button
-            onClick={() => {
-              setClicked("pause");
-              setTimeout(() => setClicked(null), 220);
-              postState("paused", remotePlaybackId || null);
-            }}
-            style={{
-              padding: "18px 34px",
-              borderRadius: 18,
-              border: "1px solid rgba(255,255,255,0.18)",
-              background: "rgba(255,255,255,0.16)",
+              background: "rgba(255,255,255,0.08)",
               color: "#fff",
-              fontSize: 22,
-              fontWeight: 950,
+              fontWeight: 900,
+              fontSize: 18,
               cursor: "pointer",
-              ...(clicked === "pause" || isPaused ? activeGlow(true) : {}),
             }}
           >
             PAUSE
           </button>
 
           <button
-            onClick={() => {
-              setClicked("stop");
-              setTimeout(() => setClicked(null), 220);
-              postState("stopped", null);
-            }}
+            onClick={() => sendAction("stop")}
             style={{
-              padding: "18px 34px",
-              borderRadius: 18,
-              border: "1px solid rgba(255,255,255,0.18)",
-              background: "#6a1d1d",
+              padding: "16px 28px",
+              borderRadius: 16,
+              border: "1px solid rgba(255,0,0,0.55)",
+              background: "rgba(170,0,0,0.9)",
               color: "#fff",
-              fontSize: 22,
-              fontWeight: 950,
+              fontWeight: 900,
+              fontSize: 18,
               cursor: "pointer",
-              ...(clicked === "stop" || isStopped ? activeGlow(true) : {}),
             }}
           >
             STOP
           </button>
 
           <button
-            onClick={() => {
-              setFlash("rw");
-              setTimeout(() => setFlash(null), 180);
-              seekDelta(-10);
-            }}
+            onClick={() => sendAction("rewind")}
             style={{
-              padding: "18px 28px",
-              borderRadius: 18,
-              border: "1px solid rgba(255,255,255,0.18)",
-              background: "rgba(255,255,255,0.10)",
+              padding: "16px 28px",
+              borderRadius: 16,
+              border: flash === "rw" ? "1px solid rgba(0,255,255,0.6)" : "1px solid rgba(255,255,255,0.18)",
+              background: "rgba(255,255,255,0.08)",
               color: "#fff",
-              fontSize: 20,
               fontWeight: 900,
+              fontSize: 18,
               cursor: "pointer",
-              ...(flash === "rw" ? activeGlow(true) : {}),
             }}
           >
             RW 10s
           </button>
 
           <button
-            onClick={() => {
-              setFlash("ff");
-              setTimeout(() => setFlash(null), 180);
-              seekDelta(10);
-            }}
+            onClick={() => sendAction("forward")}
             style={{
-              padding: "18px 28px",
-              borderRadius: 18,
-              border: "1px solid rgba(255,255,255,0.18)",
-              background: "rgba(255,255,255,0.10)",
+              padding: "16px 28px",
+              borderRadius: 16,
+              border: flash === "ff" ? "1px solid rgba(0,255,255,0.6)" : "1px solid rgba(255,255,255,0.18)",
+              background: "rgba(255,255,255,0.08)",
               color: "#fff",
-              fontSize: 20,
               fontWeight: 900,
+              fontSize: 18,
               cursor: "pointer",
-              ...(flash === "ff" ? activeGlow(true) : {}),
             }}
           >
             FF 10s
@@ -273,13 +233,13 @@ export default function ControlClient({ roomId: roomIdProp }: { roomId?: string 
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search videos (ex: AL1, V3)..."
+            placeholder="Search videos (ex: AL1, V3)…"
             style={{
-              flex: 1,
-              padding: "18px 18px",
-              borderRadius: 18,
-              border: "1px solid rgba(255,255,255,0.16)",
-              background: "rgba(255,255,255,0.08)",
+              flex: "1 1 320px",
+              padding: "16px 18px",
+              borderRadius: 16,
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "rgba(255,255,255,0.05)",
               color: "#fff",
               fontSize: 20,
               outline: "none",
@@ -290,30 +250,29 @@ export default function ControlClient({ roomId: roomIdProp }: { roomId?: string 
         {err ? (
           <div
             style={{
-              marginTop: 16,
+              marginTop: 8,
               padding: "14px 16px",
               borderRadius: 14,
-              border: "1px solid rgba(255,70,70,0.45)",
-              background: "rgba(255,0,0,0.14)",
-              fontWeight: 900,
+              border: "1px solid rgba(255,60,60,0.35)",
+              background: "rgba(120,0,0,0.35)",
+              color: "rgba(255,255,255,0.92)",
+              fontWeight: 800,
+              whiteSpace: "pre-wrap",
             }}
           >
             {err}
           </div>
         ) : null}
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 16, marginTop: 18 }}>
+        <div style={{ marginTop: 22, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
           {filtered.map((v) => {
-            const isActive = activeLabel === v.label;
+            const isActive = !!remotePlaybackId && remotePlaybackId === v.playback_id;
             return (
               <button
                 key={v.id}
-                onClick={() => {
-                  setActiveLabel(v.label);
-                  postState("playing", v.label); // server normalizes label -> playback_id
-                }}
+                onClick={() => playLabel(v.label)}
                 style={{
-                  padding: "18px 16px",
+                  padding: "18px 18px",
                   borderRadius: 18,
                   border: isActive ? "1px solid rgba(0,255,140,0.55)" : "1px solid rgba(255,255,255,0.14)",
                   background: isActive ? "rgba(0,255,140,0.14)" : "rgba(255,255,255,0.06)",
@@ -321,7 +280,7 @@ export default function ControlClient({ roomId: roomIdProp }: { roomId?: string 
                   fontWeight: 950,
                   cursor: "pointer",
                   minHeight: 64,
-                  ...activeGlow(Boolean(isActive)),
+                  ...activeGlow(isActive),
                 }}
                 title={v.playback_id}
               >
