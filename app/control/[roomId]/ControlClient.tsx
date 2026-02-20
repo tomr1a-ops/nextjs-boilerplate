@@ -9,7 +9,7 @@ function clean(input: string) {
 }
 
 export default function ControlClient({ roomId }: { roomId: string }) {
-  const rid = useMemo(() => clean(roomId) || "studioA", [roomId]);
+  const rid = useMemo(() => clean(roomId), [roomId]);
 
   const [videos, setVideos] = useState<VideoRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -19,6 +19,14 @@ export default function ControlClient({ roomId }: { roomId: string }) {
     (async () => {
       setLoading(true);
       setErr(null);
+
+      if (!rid || rid === "(missing)") {
+        setErr(`Missing roomId param. Raw prop = "${String(roomId)}"`);
+        setVideos([]);
+        setLoading(false);
+        return;
+      }
+
       try {
         const res = await fetch(`/api/videos?room=${encodeURIComponent(rid)}&t=${Date.now()}`, {
           cache: "no-store",
@@ -33,39 +41,55 @@ export default function ControlClient({ roomId }: { roomId: string }) {
         setLoading(false);
       }
     })();
-  }, [rid]);
+  }, [rid, roomId]);
 
   return (
-    <div style={{ maxWidth: 980, margin: "0 auto", padding: 20, fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial" }}>
+    <div
+      style={{
+        maxWidth: 980,
+        margin: "0 auto",
+        padding: 20,
+        fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
+      }}
+    >
       <div style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 12, opacity: 0.7 }}>IMAOS Control</div>
-        <h1 style={{ margin: 0, fontSize: 26 }}>Room: {rid}</h1>
+        <h1 style={{ margin: 0, fontSize: 26 }}>Room: {rid || "(missing)"}</h1>
         <div style={{ marginTop: 6, fontSize: 12, opacity: 0.6 }}>
-          Raw param: <span style={{ fontFamily: "monospace" }}>{String(roomId)}</span>
+          Raw prop: <span style={{ fontFamily: "monospace" }}>{String(roomId)}</span>
         </div>
       </div>
 
       {err ? (
-        <div style={{ marginBottom: 12, padding: 12, borderRadius: 12, border: "1px solid #f1c0c0", background: "#fff5f5" }}>
+        <div
+          style={{
+            marginBottom: 12,
+            padding: 12,
+            borderRadius: 12,
+            border: "1px solid #f1c0c0",
+            background: "#fff5f5",
+          }}
+        >
           <strong style={{ display: "block", marginBottom: 4 }}>Error</strong>
           <div>{err}</div>
         </div>
       ) : null}
 
-      <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>Allowed videos for this room</div>
+      <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>
+        Allowed videos for this room
+      </div>
 
       {loading ? (
         <div style={{ padding: 12, opacity: 0.8 }}>Loading…</div>
       ) : videos.length === 0 ? (
         <div style={{ padding: 12, border: "1px dashed #bbb", borderRadius: 12 }}>
-          No allowed videos found for <strong>{rid}</strong>.
+          No allowed videos found for <strong>{rid || "(missing)"}</strong>.
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10 }}>
           {videos.map((v) => (
-            <button
+            <div
               key={v.label}
-              onClick={() => alert(`Clicked ${v.label} for room ${rid}`)}
               style={{
                 padding: "14px 10px",
                 borderRadius: 14,
@@ -73,11 +97,11 @@ export default function ControlClient({ roomId }: { roomId: string }) {
                 background: "#39d353",
                 color: "#000",
                 fontWeight: 800,
-                cursor: "pointer",
+                textAlign: "center",
               }}
             >
               {v.label}
-            </button>
+            </div>
           ))}
         </div>
       )}
