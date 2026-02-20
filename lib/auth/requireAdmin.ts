@@ -2,10 +2,17 @@ import { NextResponse } from "next/server";
 import { supabaseServerAnon } from "@/lib/supabase/server";
 
 /**
- * Require a logged-in user that exists in `admin_users` with an allowed role.
+ * Require a logged-in user that exists in `admin_users` with an allowed role
+ * AND active=true.
  *
- * Table expected:
- *   public.admin_users (user_id uuid pk, role text, created_at timestamptz default now())
+ * Your table (per screenshot):
+ *   public.admin_users (
+ *     user_id uuid pk,
+ *     email text,
+ *     role text,
+ *     active boolean,
+ *     created_at timestamptz default now()
+ *   )
  *
  * Allowed roles (default): super_admin, admin
  */
@@ -18,13 +25,12 @@ export async function requireAdminRole(
   const user = userData?.user;
 
   if (userErr || !user) {
-    // Throwing a Response is the cleanest way to abort a route handler in Next
     throw NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { data: row, error: roleErr } = await supabase
     .from("admin_users")
-    .select("role")
+    .select("role, active")
     .eq("user_id", user.id)
     .maybeSingle();
 
@@ -36,8 +42,14 @@ export async function requireAdminRole(
   }
 
   const role = (row?.role || "").toString();
+  const active = row?.active === true;
 
-  if (!role || !allowed.includes(role)) {
+  // not in admin_users OR inactive
+  if (!role || !active) {
+    throw NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  if (!allowed.includes(role)) {
     throw NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
