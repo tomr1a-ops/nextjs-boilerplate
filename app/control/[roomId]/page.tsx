@@ -33,7 +33,7 @@ function getRoomFromPathname(): string {
 }
 
 export default function ControlRoomPage({ params }: { params?: { roomId?: string } }) {
-  // ✅ robust: prefer params, fallback to URL
+  // robust: prefer params, fallback to URL
   const [roomId, setRoomId] = useState<string>(clean(params?.roomId) || "");
 
   useEffect(() => {
@@ -42,7 +42,6 @@ export default function ControlRoomPage({ params }: { params?: { roomId?: string
       setRoomId(p);
       return;
     }
-    // fallback for cases where params are not available
     const fromUrl = getRoomFromPathname();
     setRoomId(fromUrl || "studioA");
   }, [params?.roomId]);
@@ -60,11 +59,11 @@ export default function ControlRoomPage({ params }: { params?: { roomId?: string
 
   async function loadVideos() {
     setErr("");
-    const qs = new URLSearchParams();
-    if (search) qs.set("search", search);
 
-    // ✅ IMPORTANT: if you later add licensing filter in /api/videos, keep this:
-    // qs.set("room", effectiveRoomId);
+    // ✅ STEP 1 CHANGE: include room so /api/videos can filter by licensee
+    const qs = new URLSearchParams();
+    qs.set("room", effectiveRoomId);
+    if (search) qs.set("search", search);
 
     const res = await fetch(`/api/videos?${qs.toString()}`, { cache: "no-store" });
     if (!res.ok) throw new Error(`videos failed: ${res.status}`);
@@ -112,7 +111,7 @@ export default function ControlRoomPage({ params }: { params?: { roomId?: string
       alive = false;
       window.clearTimeout(t);
     };
-  }, [search]);
+  }, [search, effectiveRoomId]);
 
   const nowLabel = useMemo(() => {
     if (!remotePlaybackId) return "";
