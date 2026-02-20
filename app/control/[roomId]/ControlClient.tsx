@@ -31,8 +31,8 @@ function activeGlow(isActive: boolean) {
     : {};
 }
 
-export default function ControlClient({ roomId }: { roomId: string }) {
-  const rid = clean(roomId) || "studioA";
+export default function ControlClient({ roomIdClean }: { roomIdClean: string }) {
+  const rid = clean(roomIdClean) || "studioA";
 
   const [videos, setVideos] = useState<VideoRow[]>([]);
   const [search, setSearch] = useState("");
@@ -292,7 +292,7 @@ export default function ControlClient({ roomId }: { roomId: string }) {
 
         <div style={{ marginTop: 14, opacity: 0.7, fontSize: 13 }}>
           Tip: open this on your phone/tablet and bookmark it. <br />
-          URL format: <code>/control/&lt;roomId&gt;</code>
+          URL format: <code>/control/&lt;roomIdClean&gt;</code>
         </div>
       </div>
     </div>
