@@ -15,6 +15,7 @@ type SessionData = {
   playback_id?: string | null;
   state?: "playing" | "paused" | "stopped" | string;
   updated_at?: string | null;
+  seek_seconds?: number | null;
 };
 
 function clean(v: any) {
@@ -22,44 +23,42 @@ function clean(v: any) {
 }
 
 export default function ControlRoomPage({ params }: { params: { roomId: string } }) {
-  const roomId = clean(params.roomId) || "studioA";
+  const roomId = clean(params?.roomId) || "studioA";
 
   const [videos, setVideos] = useState<VideoRow[]>([]);
   const [search, setSearch] = useState("");
   const [remoteState, setRemoteState] = useState<string>("loading");
   const [remotePlaybackId, setRemotePlaybackId] = useState<string>("");
-
   const [err, setErr] = useState<string>("");
 
-  // visual feedback: buttons
-  const [flash, setFlash] = useState<
-    "play" | "pause" | "stop" | "rw" | "ff" | `vid:${string}` | null
-  >(null);
+  // visual feedback for FF/RW
+  const [flash, setFlash] = useState<"rw" | "ff" | null>(null);
+
+  // visual feedback for play/pause/stop
+  const [clicked, setClicked] = useState<"play" | "pause" | "stop" | null>(null);
 
   async function loadVideos() {
     setErr("");
     const qs = new URLSearchParams();
-    qs.set("room", roomId);
     if (search) qs.set("search", search);
+    // IMPORTANT: tie videos list to room for license filtering
+    qs.set("room", roomId);
 
     const res = await fetch(`/api/videos?${qs.toString()}`, { cache: "no-store" });
     if (!res.ok) throw new Error(`videos failed: ${res.status}`);
-
     const data = await res.json();
     setVideos((data?.videos ?? []) as VideoRow[]);
   }
 
   async function loadSession() {
-    const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, {
-      cache: "no-store",
-    });
+    const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, { cache: "no-store" });
     if (!res.ok) return;
     const data = (await res.json()) as SessionData;
     setRemoteState(clean(data.state) || "unknown");
     setRemotePlaybackId(clean(data.playback_id));
   }
 
-  // Poll session every 1s
+  // Initial + polling session
   useEffect(() => {
     let alive = true;
     const tick = async () => {
@@ -91,7 +90,7 @@ export default function ControlRoomPage({ params }: { params: { roomId: string }
       alive = false;
       window.clearTimeout(t);
     };
-  }, [roomId, search]);
+  }, [search, roomId]);
 
   const nowLabel = useMemo(() => {
     if (!remotePlaybackId) return "";
@@ -101,7 +100,6 @@ export default function ControlRoomPage({ params }: { params: { roomId: string }
 
   async function setSession(payload: any) {
     setErr("");
-
     const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -135,6 +133,8 @@ export default function ControlRoomPage({ params }: { params: { roomId: string }
   }
 
   async function pause() {
+    setClicked("pause");
+    window.setTimeout(() => setClicked(null), 250);
     await setSession({
       state: "paused",
       playback_id: remotePlaybackId || null,
@@ -143,6 +143,8 @@ export default function ControlRoomPage({ params }: { params: { roomId: string }
   }
 
   async function resume() {
+    setClicked("play");
+    window.setTimeout(() => setClicked(null), 250);
     await setSession({
       state: "playing",
       playback_id: remotePlaybackId || null,
@@ -152,22 +154,26 @@ export default function ControlRoomPage({ params }: { params: { roomId: string }
   }
 
   async function stop() {
+    setClicked("stop");
+    window.setTimeout(() => setClicked(null), 250);
     await setSession({
       state: "stopped",
       playback_id: null,
       paused_at: null,
+      seek_seconds: null,
     });
   }
 
-  // Seek command (uses your /api/session command model)
+  // If your /api/session supports seek_seconds as command delta
   async function seekDelta(deltaSeconds: number) {
     const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
       body: JSON.stringify({
-        command: "seek_delta",
-        value: deltaSeconds,
+        state: remoteState,
+        playback_id: remotePlaybackId || null,
+        seek_seconds: deltaSeconds,
       }),
     });
 
@@ -182,50 +188,21 @@ export default function ControlRoomPage({ params }: { params: { roomId: string }
     }
   }
 
-  async function flashTap(key: typeof flash) {
-    setFlash(key);
-    window.setTimeout(() => setFlash(null), 180);
-  }
-
-  async function handlePlay() {
-    setErr("");
-    await flashTap("play");
-    try {
-      await resume();
-    } catch (e: any) {
-      setErr(e?.message || "Play failed");
-    }
-  }
-
-  async function handlePause() {
-    setErr("");
-    await flashTap("pause");
-    try {
-      await pause();
-    } catch (e: any) {
-      setErr(e?.message || "Pause failed");
-    }
-  }
-
-  async function handleStop() {
-    setErr("");
-    await flashTap("stop");
-    try {
-      await stop();
-    } catch (e: any) {
-      setErr(e?.message || "Stop failed");
-    }
-  }
-
   async function handleSeek(delta: number, type: "rw" | "ff") {
     setErr("");
-    await flashTap(type);
+    setFlash(type);
     try {
       await seekDelta(delta);
     } catch (e: any) {
       setErr(e?.message || "Seek failed");
+    } finally {
+      window.setTimeout(() => setFlash(null), 250);
     }
   }
+
+  const playActive = remoteState === "playing" || clicked === "play";
+  const pauseActive = remoteState === "paused" || clicked === "pause";
+  const stopActive = remoteState === "stopped" || clicked === "stop";
 
   return (
     <div
@@ -269,51 +246,57 @@ export default function ControlRoomPage({ params }: { params: { roomId: string }
         {/* Controls */}
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 14 }}>
           <button
-            onClick={handlePlay}
+            onClick={resume}
             style={{
               padding: "12px 16px",
               borderRadius: 14,
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: flash === "play" ? "#2dff2d" : "#1f7a1f",
+              border: playActive ? "2px solid rgba(0,255,140,0.75)" : "1px solid rgba(255,255,255,0.12)",
+              background: "#1f7a1f",
               color: "#000",
               fontWeight: 900,
               cursor: "pointer",
               minWidth: 120,
-              transition: "background 0.15s ease",
+              boxShadow: playActive ? "0 0 0 3px rgba(0,255,140,0.15)" : "none",
+              transform: clicked === "play" ? "scale(0.99)" : "scale(1)",
+              transition: "transform 0.08s ease, box-shadow 0.12s ease, border 0.12s ease",
             }}
           >
             PLAY
           </button>
 
           <button
-            onClick={handlePause}
+            onClick={pause}
             style={{
               padding: "12px 16px",
               borderRadius: 14,
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: flash === "pause" ? "#666" : "#333",
+              border: pauseActive ? "2px solid rgba(255,255,255,0.38)" : "1px solid rgba(255,255,255,0.12)",
+              background: "#333",
               color: "#fff",
               fontWeight: 900,
               cursor: "pointer",
               minWidth: 120,
-              transition: "background 0.15s ease",
+              boxShadow: pauseActive ? "0 0 0 3px rgba(255,255,255,0.08)" : "none",
+              transform: clicked === "pause" ? "scale(0.99)" : "scale(1)",
+              transition: "transform 0.08s ease, box-shadow 0.12s ease, border 0.12s ease",
             }}
           >
             PAUSE
           </button>
 
           <button
-            onClick={handleStop}
+            onClick={stop}
             style={{
               padding: "12px 16px",
               borderRadius: 14,
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: flash === "stop" ? "#ff4d4d" : "#5a1d1d",
+              border: stopActive ? "2px solid rgba(255,80,80,0.55)" : "1px solid rgba(255,255,255,0.12)",
+              background: "#5a1d1d",
               color: "#fff",
               fontWeight: 900,
               cursor: "pointer",
               minWidth: 120,
-              transition: "background 0.15s ease",
+              boxShadow: stopActive ? "0 0 0 3px rgba(255,80,80,0.12)" : "none",
+              transform: clicked === "stop" ? "scale(0.99)" : "scale(1)",
+              transition: "transform 0.08s ease, box-shadow 0.12s ease, border 0.12s ease",
             }}
           >
             STOP
@@ -382,6 +365,7 @@ export default function ControlRoomPage({ params }: { params: { roomId: string }
               border: "1px solid rgba(255,0,0,0.18)",
               color: "rgba(255,220,220,0.95)",
               fontWeight: 700,
+              whiteSpace: "pre-wrap",
             }}
           >
             {err}
@@ -399,37 +383,20 @@ export default function ControlRoomPage({ params }: { params: { roomId: string }
         >
           {videos.map((v) => {
             const isActive = remotePlaybackId && v.playback_id === remotePlaybackId;
-            const flashed = flash === `vid:${v.id}`;
-
             return (
               <button
                 key={v.id}
-                onClick={async () => {
-                  setErr("");
-                  await flashTap(`vid:${v.id}`);
-                  try {
-                    await playVideo(v);
-                  } catch (e: any) {
-                    setErr(e?.message || "Play failed");
-                  }
-                }}
+                onClick={() => playVideo(v)}
                 style={{
                   padding: "14px 12px",
                   borderRadius: 16,
-                  border: isActive
-                    ? "2px solid rgba(0,255,140,0.75)"
-                    : "1px solid rgba(255,255,255,0.12)",
-                  background: flashed
-                    ? "rgba(255,255,255,0.18)"
-                    : isActive
-                    ? "rgba(0,255,140,0.12)"
-                    : "rgba(255,255,255,0.06)",
+                  border: isActive ? "2px solid rgba(0,255,140,0.75)" : "1px solid rgba(255,255,255,0.12)",
+                  background: isActive ? "rgba(0,255,140,0.12)" : "rgba(255,255,255,0.06)",
                   color: "#fff",
                   fontWeight: 950,
                   letterSpacing: 0.3,
                   cursor: "pointer",
                   minHeight: 58,
-                  transition: "background 0.12s ease",
                 }}
                 title={v.playback_id}
               >
@@ -442,7 +409,7 @@ export default function ControlRoomPage({ params }: { params: { roomId: string }
         <div style={{ marginTop: 18, opacity: 0.7, fontSize: 12, lineHeight: 1.35 }}>
           Tip: open this on your phone/tablet and bookmark it.
           <br />
-          URL format: <span style={{ fontFamily: "monospace" }}>/control/studioA</span>
+          URL format: <span style={{ fontFamily: "monospace" }}>/control/&lt;roomId&gt;</span>
         </div>
       </div>
     </div>
