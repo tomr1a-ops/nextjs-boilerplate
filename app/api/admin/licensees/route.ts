@@ -1,139 +1,54 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { requireAdminRole } from "@/lib/auth/requireAdmin";
+import { createServerClient } from "@supabase/ssr";
 
-function jsonError(message: string, status = 400) {
-  return NextResponse.json({ error: message }, { status });
-}
+export async function requireAdminRole(
+  req: NextRequest,
+  allowed: string[] = ["super_admin", "admin"]
+) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-function clean(v: any) {
-  return (v ?? "").toString().trim();
-}
+  const res = NextResponse.next();
 
-function getAdminSupabase():
-  | { ok: true; supabase: ReturnType<typeof createClient> }
-  | { ok: false; error: string } {
-  const SUPABASE_URL =
-    process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabase = createServerClient(url, anon, {
+    cookies: {
+      getAll() {
+        return req.cookies.getAll();
+      },
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value, options }) => {
+          res.cookies.set(name, value, options);
+        });
+      },
+    },
+  });
 
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    return {
-      ok: false,
-      error:
-        "Missing SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) or SUPABASE_SERVICE_ROLE_KEY",
-    };
+  const { data: userData, error: userErr } = await supabase.auth.getUser();
+  const user = userData?.user;
+
+  if (userErr || !user) {
+    throw NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  return {
-    ok: true,
-    supabase: createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY),
-  };
-}
+  const { data: row, error: roleErr } = await supabase
+    .from("admin_users")
+    .select("role, active")
+    .eq("user_id", user.id)
+    .maybeSingle();
 
-export async function GET(req: NextRequest) {
-  // ✅ require logged-in admin
-  await requireAdminRole();
-
-  const admin = getAdminSupabase();
-  if (!admin.ok) return jsonError(admin.error, 500);
-  const supabase = admin.supabase;
-
-  const status = clean(req.nextUrl.searchParams.get("status")); // optional: active/disabled
-  const search = clean(req.nextUrl.searchParams.get("search")); // optional: matches name/code
-
-  let q = (supabase as any)
-    .from("licensees")
-    .select("id,name,code,status,created_at")
-    .order("created_at", { ascending: false });
-
-  if (status) q = q.eq("status", status);
-  if (search) {
-    q = q.or(`name.ilike.%${search}%,code.ilike.%${search}%`);
+  if (roleErr) {
+    throw NextResponse.json(
+      { error: `Admin role lookup failed: ${roleErr.message}` },
+      { status: 500 }
+    );
   }
 
-  const { data, error } = await q;
-  if (error) return jsonError(error.message, 500);
+  const role = (row?.role || "").toString();
+  const active = row?.active !== false;
 
-  return NextResponse.json({ licensees: data ?? [] });
-}
-
-export async function POST(req: NextRequest) {
-  // ✅ require logged-in admin
-  await requireAdminRole();
-
-  const admin = getAdminSupabase();
-  if (!admin.ok) return jsonError(admin.error, 500);
-  const supabase = admin.supabase;
-
-  const body = await req.json().catch(() => ({}));
-  const name = clean(body?.name);
-  const code = clean(body?.code).toUpperCase();
-  const status = clean(body?.status) || "active";
-
-  if (!name) return jsonError("Missing name", 400);
-  if (!code) return jsonError("Missing code", 400);
-  if (!["active", "disabled"].includes(status)) {
-    return jsonError("Invalid status (active|disabled)", 400);
+  if (!active || !role || !allowed.includes(role)) {
+    throw NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { data, error } = await (supabase as any)
-    .from("licensees")
-    .insert({ name, code, status })
-    .select("id,name,code,status,created_at")
-    .single();
-
-  if (error) return jsonError(error.message, 500);
-
-  return NextResponse.json({ licensee: data }, { status: 201 });
-}
-
-export async function PATCH(req: NextRequest) {
-  // ✅ require logged-in admin
-  await requireAdminRole();
-
-  const admin = getAdminSupabase();
-  if (!admin.ok) return jsonError(admin.error, 500);
-  const supabase = admin.supabase;
-
-  const body = await req.json().catch(() => ({}));
-  const id = clean(body?.id);
-  if (!id) return jsonError("Missing id", 400);
-
-  const patch: Record<string, any> = {};
-
-  if (body?.name !== undefined) {
-    const name = clean(body?.name);
-    if (!name) return jsonError("Invalid name", 400);
-    patch.name = name;
-  }
-
-  if (body?.code !== undefined) {
-    const code = clean(body?.code).toUpperCase();
-    if (!code) return jsonError("Invalid code", 400);
-    patch.code = code;
-  }
-
-  if (body?.status !== undefined) {
-    const status = clean(body?.status);
-    if (!["active", "disabled"].includes(status)) {
-      return jsonError("Invalid status (active|disabled)", 400);
-    }
-    patch.status = status;
-  }
-
-  if (Object.keys(patch).length === 0) {
-    return jsonError("No fields to update", 400);
-  }
-
-  const { data, error } = await (supabase as any)
-    .from("licensees")
-    .update(patch)
-    .eq("id", id)
-    .select("id,name,code,status,created_at")
-    .single();
-
-  if (error) return jsonError(error.message, 500);
-
-  return NextResponse.json({ licensee: data });
+  return { user, role, res };
 }
