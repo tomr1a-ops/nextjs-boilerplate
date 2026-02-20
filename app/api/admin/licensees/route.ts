@@ -1,12 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-
-const ADMIN_API_KEY = process.env.ADMIN_API_KEY;
-
-function requireAdmin(req: NextRequest) {
-  const key = (req.headers.get("x-admin-key") || "").trim();
-  return key && ADMIN_API_KEY && key === ADMIN_API_KEY;
-}
+import { requireAdminRole } from "@/lib/auth/requireAdmin";
 
 function jsonError(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
@@ -31,12 +25,15 @@ function getAdminSupabase():
     };
   }
 
-  return { ok: true, supabase: createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY) };
+  return {
+    ok: true,
+    supabase: createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY),
+  };
 }
 
 export async function GET(req: NextRequest) {
-  if (!ADMIN_API_KEY) return jsonError("Missing ADMIN_API_KEY", 500);
-  if (!requireAdmin(req)) return jsonError("Unauthorized", 401);
+  // ✅ require logged-in admin
+  await requireAdminRole();
 
   const admin = getAdminSupabase();
   if (!admin.ok) return jsonError(admin.error, 500);
@@ -52,7 +49,6 @@ export async function GET(req: NextRequest) {
 
   if (status) q = q.eq("status", status);
   if (search) {
-    // OR search on name/code
     q = q.or(`name.ilike.%${search}%,code.ilike.%${search}%`);
   }
 
@@ -63,8 +59,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!ADMIN_API_KEY) return jsonError("Missing ADMIN_API_KEY", 500);
-  if (!requireAdmin(req)) return jsonError("Unauthorized", 401);
+  // ✅ require logged-in admin
+  await requireAdminRole();
 
   const admin = getAdminSupabase();
   if (!admin.ok) return jsonError(admin.error, 500);
@@ -77,8 +73,9 @@ export async function POST(req: NextRequest) {
 
   if (!name) return jsonError("Missing name", 400);
   if (!code) return jsonError("Missing code", 400);
-  if (!["active", "disabled"].includes(status))
+  if (!["active", "disabled"].includes(status)) {
     return jsonError("Invalid status (active|disabled)", 400);
+  }
 
   const { data, error } = await (supabase as any)
     .from("licensees")
@@ -92,8 +89,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  if (!ADMIN_API_KEY) return jsonError("Missing ADMIN_API_KEY", 500);
-  if (!requireAdmin(req)) return jsonError("Unauthorized", 401);
+  // ✅ require logged-in admin
+  await requireAdminRole();
 
   const admin = getAdminSupabase();
   if (!admin.ok) return jsonError(admin.error, 500);
@@ -119,8 +116,9 @@ export async function PATCH(req: NextRequest) {
 
   if (body?.status !== undefined) {
     const status = clean(body?.status);
-    if (!["active", "disabled"].includes(status))
+    if (!["active", "disabled"].includes(status)) {
       return jsonError("Invalid status (active|disabled)", 400);
+    }
     patch.status = status;
   }
 
