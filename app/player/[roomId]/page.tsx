@@ -2,24 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-type VideoRow = {
-  id: string;
-  label: string;
-  playback_id: string;
-  sort_order: number | null;
-  active: boolean;
-};
-
 type SessionData = {
   room_id?: string;
   playback_id?: string | null;
   state?: "playing" | "paused" | "stopped" | string;
   updated_at?: string | null;
-
-  // legacy
+  started_at?: string | null;
+  paused_at?: string | null;
   seek_seconds?: number | null;
-
-  // command model (optional)
   command_id?: number | null;
   command_type?: string | null;
   command_value?: number | null;
@@ -29,454 +19,190 @@ function clean(v: any) {
   return (v ?? "").toString().trim();
 }
 
-export default function ControlRoomPage({
-  params,
-}: {
-  params: { roomId: string };
-}) {
-  const roomId = clean(params.roomId) || "studioA";
+export default function PlayerRoomPage({ params }: { params: { roomId: string } }) {
+  const roomId = clean(params?.roomId) || "studioA";
 
-  const [videos, setVideos] = useState<VideoRow[]>([]);
-  const [search, setSearch] = useState("");
   const [remoteState, setRemoteState] = useState<string>("loading");
   const [remotePlaybackId, setRemotePlaybackId] = useState<string>("");
   const [err, setErr] = useState<string>("");
 
-  // visual feedback
-  const [flash, setFlash] = useState<"rw" | "ff" | null>(null);
+  const playerHostRef = useRef<HTMLDivElement | null>(null);
+  const muxElRef = useRef<any>(null);
 
-  // press-and-hold repeat timer
-  const holdTimerRef = useRef<number | null>(null);
-  const holdingRef = useRef<"rw" | "ff" | null>(null);
+  // Load mux-player web component once (client-side)
+  useEffect(() => {
+    const id = "mux-player-script";
+    if (document.getElementById(id)) return;
 
-  const TAP_SECONDS = 10; // tap jump size
-  const HOLD_INTERVAL_MS = 200; // repeat speed while holding
-
-  async function loadVideos() {
-    setErr("");
-    const qs = search ? `?search=${encodeURIComponent(search)}` : "";
-    const res = await fetch(`/api/videos${qs}`, { cache: "no-store" });
-    if (!res.ok) throw new Error(`videos failed: ${res.status}`);
-    const data = await res.json();
-    setVideos((data?.videos ?? []) as VideoRow[]);
-  }
+    const s = document.createElement("script");
+    s.id = id;
+    s.src = "https://unpkg.com/@mux/mux-player";
+    s.async = true;
+    document.head.appendChild(s);
+  }, []);
 
   async function loadSession() {
-    const res = await fetch(
-      `/api/session?room=${encodeURIComponent(roomId)}`,
-      { cache: "no-store" }
-    );
-    if (!res.ok) return;
+    const url = `/api/session?room=${encodeURIComponent(roomId)}&t=${Date.now()}`;
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) {
+      // don't hard-fail: just show status
+      setRemoteState(`error:${res.status}`);
+      return;
+    }
     const data = (await res.json()) as SessionData;
     setRemoteState(clean(data.state) || "unknown");
     setRemotePlaybackId(clean(data.playback_id));
   }
 
-  // Initial + polling session
+  // Poll session
   useEffect(() => {
     let alive = true;
+
     const tick = async () => {
       if (!alive) return;
       try {
         await loadSession();
-      } catch {}
+      } catch {
+        // ignore transient fetch issues
+      }
     };
+
     tick();
     const id = window.setInterval(tick, 1000);
+
     return () => {
       alive = false;
       window.clearInterval(id);
     };
   }, [roomId]);
 
-  // Load videos initially + when search changes (debounced)
-  useEffect(() => {
-    let alive = true;
-    const t = window.setTimeout(async () => {
-      if (!alive) return;
-      try {
-        await loadVideos();
-      } catch (e: any) {
-        setErr(e?.message || "Failed to load videos");
-      }
-    }, 200);
-    return () => {
-      alive = false;
-      window.clearTimeout(t);
-    };
-  }, [search]);
+  const statusText = useMemo(() => {
+    const st = remoteState || "unknown";
+    const pb = remotePlaybackId ? remotePlaybackId.slice(0, 10) + "…" : "none";
+    return `state=${st} • playback=${pb}`;
+  }, [remoteState, remotePlaybackId]);
 
-  // Cleanup: stop hold timer on unmount
+  // Ensure mux-player element exists once
   useEffect(() => {
-    return () => stopHold();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!playerHostRef.current) return;
+    if (muxElRef.current) return;
+
+    // Create <mux-player> element dynamically (avoids TS/JSX typing headaches)
+    const el = document.createElement("mux-player") as any;
+    el.setAttribute("stream-type", "on-demand");
+    el.setAttribute("controls", "true");
+    el.setAttribute("autoplay", "true");
+    el.setAttribute("muted", "true"); // avoids autoplay blocks in browsers
+    el.setAttribute("playsinline", "true");
+    el.style.width = "100%";
+    el.style.height = "100%";
+    el.style.background = "black";
+
+    playerHostRef.current.innerHTML = "";
+    playerHostRef.current.appendChild(el);
+    muxElRef.current = el;
   }, []);
 
-  const nowLabel = useMemo(() => {
-    if (!remotePlaybackId) return "";
-    const v = videos.find((x) => x.playback_id === remotePlaybackId);
-    return v?.label || "";
-  }, [remotePlaybackId, videos]);
+  // Drive player from session state
+  useEffect(() => {
+    const el = muxElRef.current;
+    if (!el) return;
 
-  async function setSession(payload: any) {
     setErr("");
-    const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      cache: "no-store",
-      body: JSON.stringify(payload),
-    });
 
-    const text = await res.text();
-    if (!res.ok) {
+    const state = clean(remoteState);
+    const playbackId = clean(remotePlaybackId);
+
+    // STOP: clear playback
+    if (state === "stopped" || !playbackId) {
       try {
-        const j = JSON.parse(text);
-        throw new Error(j?.error || `session failed ${res.status}`);
-      } catch {
-        throw new Error(text || `session failed ${res.status}`);
-      }
-    }
-
-    // refresh immediately
-    try {
-      await loadSession();
-    } catch {}
-  }
-
-  async function playVideo(v: VideoRow) {
-    await setSession({
-      state: "playing",
-      playback_id: v.playback_id,
-      started_at: new Date().toISOString(),
-      paused_at: null,
-    });
-  }
-
-  async function pause() {
-    await setSession({
-      state: "paused",
-      playback_id: remotePlaybackId || null,
-      paused_at: new Date().toISOString(),
-    });
-  }
-
-  async function resume() {
-    await setSession({
-      state: "playing",
-      playback_id: remotePlaybackId || null,
-      started_at: new Date().toISOString(),
-      paused_at: null,
-    });
-  }
-
-  async function stop() {
-    stopHold();
-    await setSession({
-      state: "stopped",
-      playback_id: null,
-      paused_at: null,
-      seek_seconds: null,
-    });
-  }
-
-  /**
-   * One-time seek command.
-   * Requires /api/session to accept:
-   * { command: "seek_delta", value: +10 } or -10
-   */
-  async function seekDelta(deltaSeconds: number) {
-    const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      cache: "no-store",
-      body: JSON.stringify({
-        command: "seek_delta",
-        value: deltaSeconds,
-      }),
-    });
-
-    const text = await res.text();
-    if (!res.ok) {
+        el.removeAttribute("playback-id");
+      } catch {}
       try {
-        const j = JSON.parse(text);
-        throw new Error(j?.error || `seek failed ${res.status}`);
-      } catch {
-        throw new Error(text || `seek failed ${res.status}`);
-      }
+        el.pause?.();
+      } catch {}
+      return;
     }
-  }
 
-  function stopHold() {
-    if (holdTimerRef.current !== null) {
-      window.clearInterval(holdTimerRef.current);
-      holdTimerRef.current = null;
-    }
-    holdingRef.current = null;
-    setFlash(null);
-  }
-
-  async function tapSeek(deltaSeconds: number, type: "rw" | "ff") {
-    setErr("");
-    setFlash(type);
+    // If playback_id changed, set it
     try {
-      await seekDelta(deltaSeconds);
+      const current = el.getAttribute("playback-id") || "";
+      if (current !== playbackId) {
+        el.setAttribute("playback-id", playbackId);
+      }
     } catch (e: any) {
-      setErr(e?.message || "Seek failed");
-    } finally {
-      window.setTimeout(() => setFlash(null), 250);
+      setErr(e?.message || "Failed to set playback-id");
+      return;
     }
-  }
 
-  function startHold(type: "rw" | "ff") {
-    // If already holding, ignore
-    if (holdTimerRef.current !== null) return;
-
-    setErr("");
-    holdingRef.current = type;
-    setFlash(type);
-
-    const delta = type === "rw" ? -TAP_SECONDS : TAP_SECONDS;
-
-    // Fire immediately once
-    seekDelta(delta).catch((e: any) => setErr(e?.message || "Seek failed"));
-
-    // Then repeat fast
-    holdTimerRef.current = window.setInterval(() => {
-      // if stopped holding, bail
-      if (!holdingRef.current) return;
-      seekDelta(delta).catch((e: any) => setErr(e?.message || "Seek failed"));
-    }, HOLD_INTERVAL_MS);
-  }
-
-  function onSeekPointerDown(e: React.PointerEvent, type: "rw" | "ff") {
-    e.preventDefault();
-    (e.currentTarget as any).setPointerCapture?.(e.pointerId);
-    startHold(type);
-  }
-
-  function onSeekPointerUp(e: React.PointerEvent) {
-    e.preventDefault();
-    stopHold();
-  }
-
-  function onSeekPointerLeave(e: React.PointerEvent) {
-    e.preventDefault();
-    stopHold();
-  }
+    // PLAY/PAUSE
+    if (state === "paused") {
+      try {
+        el.pause?.();
+      } catch {}
+    } else if (state === "playing") {
+      try {
+        el.play?.();
+      } catch {}
+    }
+  }, [remoteState, remotePlaybackId]);
 
   return (
     <div
       style={{
         minHeight: "100vh",
-        padding: 16,
-        background: "#0b0b0b",
+        background: "#000",
         color: "#fff",
         fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
-        touchAction: "manipulation", // helps on mobile
+        display: "flex",
+        flexDirection: "column",
       }}
     >
-      <div style={{ maxWidth: 980, margin: "0 auto" }}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
-          <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900, letterSpacing: 0.2 }}>
-            IMAOS Control — <span style={{ opacity: 0.85 }}>{roomId}</span>
-          </h1>
-
-          <div
-            style={{
-              marginLeft: "auto",
-              display: "flex",
-              gap: 10,
-              alignItems: "center",
-              padding: "8px 10px",
-              borderRadius: 12,
-              background: "rgba(255,255,255,0.06)",
-            }}
-          >
-            <div style={{ fontSize: 13, opacity: 0.85 }}>
-              State: <b style={{ opacity: 1 }}>{remoteState}</b>
-              {nowLabel ? (
-                <>
-                  {" "}
-                  • Now: <b>{nowLabel}</b>
-                </>
-              ) : null}
-            </div>
-          </div>
+      {/* Top bar */}
+      <div
+        style={{
+          padding: "10px 12px",
+          display: "flex",
+          gap: 12,
+          alignItems: "center",
+          borderBottom: "1px solid rgba(255,255,255,0.08)",
+          background: "rgba(0,0,0,0.65)",
+        }}
+      >
+        <div style={{ fontWeight: 900, letterSpacing: 0.2 }}>
+          IMAOS Player — <span style={{ opacity: 0.85 }}>{roomId}</span>
         </div>
 
-        {/* Controls */}
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 14 }}>
-          <button
-            onClick={resume}
-            style={{
-              padding: "12px 16px",
-              borderRadius: 14,
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: "#1f7a1f",
-              color: "#000",
-              fontWeight: 900,
-              cursor: "pointer",
-              minWidth: 120,
-            }}
-          >
-            PLAY
-          </button>
-
-          <button
-            onClick={pause}
-            style={{
-              padding: "12px 16px",
-              borderRadius: 14,
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: "#333",
-              color: "#fff",
-              fontWeight: 900,
-              cursor: "pointer",
-              minWidth: 120,
-            }}
-          >
-            PAUSE
-          </button>
-
-          <button
-            onClick={stop}
-            style={{
-              padding: "12px 16px",
-              borderRadius: 14,
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: "#5a1d1d",
-              color: "#fff",
-              fontWeight: 900,
-              cursor: "pointer",
-              minWidth: 120,
-            }}
-          >
-            STOP
-          </button>
-
-          {/* RW / FF — Tap or Press-and-hold */}
-          <button
-            onClick={() => tapSeek(-TAP_SECONDS, "rw")}
-            onPointerDown={(e) => onSeekPointerDown(e, "rw")}
-            onPointerUp={onSeekPointerUp}
-            onPointerCancel={onSeekPointerUp}
-            onPointerLeave={onSeekPointerLeave}
-            style={{
-              padding: "12px 16px",
-              borderRadius: 14,
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: flash === "rw" ? "#0077ff" : "#222",
-              color: "#fff",
-              fontWeight: 900,
-              cursor: "pointer",
-              minWidth: 120,
-              transition: "background 0.15s ease",
-              userSelect: "none",
-              WebkitUserSelect: "none",
-              touchAction: "none", // IMPORTANT: prevents scroll while holding
-            }}
-          >
-            RW {TAP_SECONDS}s
-          </button>
-
-          <button
-            onClick={() => tapSeek(TAP_SECONDS, "ff")}
-            onPointerDown={(e) => onSeekPointerDown(e, "ff")}
-            onPointerUp={onSeekPointerUp}
-            onPointerCancel={onSeekPointerUp}
-            onPointerLeave={onSeekPointerLeave}
-            style={{
-              padding: "12px 16px",
-              borderRadius: 14,
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: flash === "ff" ? "#00c853" : "#222",
-              color: "#fff",
-              fontWeight: 900,
-              cursor: "pointer",
-              minWidth: 120,
-              transition: "background 0.15s ease",
-              userSelect: "none",
-              WebkitUserSelect: "none",
-              touchAction: "none", // IMPORTANT: prevents scroll while holding
-            }}
-          >
-            FF {TAP_SECONDS}s
-          </button>
-
-          <div style={{ marginLeft: "auto", flex: "1 1 280px" }}>
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search videos (ex: AL1, V3)…"
-              style={{
-                width: "100%",
-                padding: "12px 14px",
-                borderRadius: 14,
-                border: "1px solid rgba(255,255,255,0.12)",
-                background: "rgba(255,255,255,0.06)",
-                color: "#fff",
-                outline: "none",
-                fontSize: 15,
-              }}
-            />
-          </div>
+        <div style={{ marginLeft: "auto", fontSize: 13, opacity: 0.85 }}>
+          {statusText}
         </div>
+      </div>
 
-        {err ? (
-          <div
-            style={{
-              marginTop: 12,
-              padding: "10px 12px",
-              borderRadius: 12,
-              background: "rgba(255,0,0,0.12)",
-              border: "1px solid rgba(255,0,0,0.18)",
-              color: "rgba(255,220,220,0.95)",
-              fontWeight: 700,
-            }}
-          >
-            {err}
-          </div>
-        ) : null}
-
-        {/* Video grid */}
+      {/* Error strip */}
+      {err ? (
         <div
           style={{
-            marginTop: 16,
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
-            gap: 12,
+            padding: "10px 12px",
+            background: "rgba(255,0,0,0.12)",
+            borderBottom: "1px solid rgba(255,0,0,0.2)",
+            color: "rgba(255,220,220,0.95)",
+            fontWeight: 700,
           }}
         >
-          {videos.map((v) => {
-            const isActive = remotePlaybackId && v.playback_id === remotePlaybackId;
-            return (
-              <button
-                key={v.id}
-                onClick={() => playVideo(v)}
-                style={{
-                  padding: "14px 12px",
-                  borderRadius: 16,
-                  border: isActive ? "2px solid rgba(0,255,140,0.75)" : "1px solid rgba(255,255,255,0.12)",
-                  background: isActive ? "rgba(0,255,140,0.12)" : "rgba(255,255,255,0.06)",
-                  color: "#fff",
-                  fontWeight: 950,
-                  letterSpacing: 0.3,
-                  cursor: "pointer",
-                  minHeight: 58,
-                }}
-                title={v.playback_id}
-              >
-                {v.label}
-              </button>
-            );
-          })}
+          {err}
         </div>
+      ) : null}
 
-        <div style={{ marginTop: 18, opacity: 0.7, fontSize: 12, lineHeight: 1.35 }}>
-          Tip: open this on your phone/tablet and bookmark it.
-          <br />
-          URL format: <span style={{ fontFamily: "monospace" }}>/control/studioA</span>
-        </div>
+      {/* Player area */}
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <div
+          ref={playerHostRef}
+          style={{
+            width: "100%",
+            height: "100%",
+            background: "#000",
+          }}
+        />
       </div>
     </div>
   );
