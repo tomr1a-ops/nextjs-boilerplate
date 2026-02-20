@@ -75,7 +75,7 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: accessErr.message }, { status: 500 });
       }
 
-      // If your licensee_video_access has "status", we honor it; if not, everything counts as active.
+      // If licensee_video_access has "status", honor it; if not, treat as active
       allowedLabels =
         (accessRows || [])
           .filter((r: any) => !r?.status || String(r.status) === "active")
