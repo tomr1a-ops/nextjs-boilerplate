@@ -22,40 +22,63 @@ type VideoRow = {
   created_at?: string;
 };
 
+function clean(v: any) {
+  return (v ?? "").toString().trim();
+}
+
 export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
-    const search = (url.searchParams.get("search") || "").trim();
-    const room = (url.searchParams.get("room") || "").trim();
+    const search = clean(url.searchParams.get("search"));
+    const room = clean(url.searchParams.get("room"));
 
     // If room is provided, enforce license filtering:
     // room -> licensee_rooms -> licensee_id -> licensee_video_access -> allowed labels
     let allowedLabels: string[] | null = null;
 
     if (room) {
-      const { data: roomRow, error: roomErr } = await supabase
+      const { data: roomRows, error: roomErr } = await supabase
         .from("licensee_rooms")
-        .select("licensee_id, status")
-        .eq("room_id", room)
-        .maybeSingle();
+        .select("licensee_id,status,room_id")
+        .eq("room_id", room);
 
-      // If no room mapping, return empty list (acts like "no license")
       if (roomErr) {
         return NextResponse.json({ error: roomErr.message }, { status: 500 });
       }
-      if (!roomRow) {
+
+      if (!roomRows || roomRows.length === 0) {
+        // no license mapping => no videos
         return NextResponse.json({ videos: [] }, { status: 200 });
       }
 
-      // Optional: if you store status on licensee_rooms
-      if (roomRow.status && roomRow.status !== "active") {
+      // If multiple mappings exist for same room, that's a data integrity issue.
+      // Try to pick exactly one active; if ambiguous, return 409.
+      const activeRows = roomRows.filter(
+        (r: any) => !r?.status || String(r.status) === "active"
+      );
+
+      if (activeRows.length === 0) {
         return NextResponse.json({ videos: [] }, { status: 200 });
       }
+
+      if (activeRows.length > 1) {
+        return NextResponse.json(
+          {
+            error:
+              "Room is assigned to multiple active licensees. Fix licensee_rooms so room_id is unique.",
+            room_id: room,
+            matches: activeRows.map((r: any) => ({ licensee_id: r.licensee_id })),
+          },
+          { status: 409 }
+        );
+      }
+
+      const licenseeId = activeRows[0].licensee_id;
 
       const { data: accessRows, error: accessErr } = await supabase
         .from("licensee_video_access")
-        .select("video_label, status")
-        .eq("licensee_id", roomRow.licensee_id);
+        .select("video_label,status")
+        .eq("licensee_id", licenseeId);
 
       if (accessErr) {
         return NextResponse.json({ error: accessErr.message }, { status: 500 });
@@ -63,8 +86,8 @@ export async function GET(req: NextRequest) {
 
       allowedLabels =
         (accessRows || [])
-          .filter((r: any) => !r.status || r.status === "active")
-          .map((r: any) => String(r.video_label || "").trim())
+          .filter((r: any) => !r?.status || String(r.status) === "active")
+          .map((r: any) => clean(r?.video_label))
           .filter(Boolean) ?? [];
     }
 
@@ -78,7 +101,6 @@ export async function GET(req: NextRequest) {
     }
 
     if (allowedLabels) {
-      // If license exists but no labels, return none
       if (allowedLabels.length === 0) {
         return NextResponse.json({ videos: [] }, { status: 200 });
       }
