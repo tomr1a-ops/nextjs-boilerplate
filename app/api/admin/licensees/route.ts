@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
+export function mergeResponseCookies(from: NextResponse, to: NextResponse) {
+  // Copy any cookies set on `from` to `to`
+  from.cookies.getAll().forEach((c) => {
+    to.cookies.set(c);
+  });
+  return to;
+}
+
 export async function requireAdminRole(
   req: NextRequest,
   allowed: string[] = ["super_admin", "admin"]
