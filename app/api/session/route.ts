@@ -17,10 +17,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 async function normalizePlaybackId(playbackOrLabel: string | null) {
   if (!playbackOrLabel) return null;
 
-  // Mux playback ids are typically alphanumeric; labels like AL1V1 are short and usually contain letters+digits.
-  // We’ll do a lookup if it looks like a label (you can tighten this rule).
   const looksLikeLabel = playbackOrLabel.length <= 16;
-
   if (!looksLikeLabel) return playbackOrLabel;
 
   const { data, error } = await supabase
@@ -32,6 +29,56 @@ async function normalizePlaybackId(playbackOrLabel: string | null) {
 
   if (error) return playbackOrLabel;
   return data?.playback_id || playbackOrLabel;
+}
+
+async function getLicenseeIdForRoom(room: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("licensee_rooms")
+    .select("licensee_id")
+    .eq("room_id", room)
+    .maybeSingle();
+
+  if (error) return null;
+  return (data?.licensee_id ?? null) as string | null;
+}
+
+async function isPlaybackAllowedForRoom(room: string, playbackId: string | null): Promise<boolean> {
+  if (!playbackId) return true; // stopping is always allowed
+
+  const licenseeId = await getLicenseeIdForRoom(room);
+  if (!licenseeId) return false;
+
+  // Get allowed labels
+  const { data: allowed, error: aErr } = await supabase
+    .from("licensee_video_access")
+    .select("video_label")
+    .eq("licensee_id", licenseeId)
+    .eq("status", "active");
+
+  if (aErr) return false;
+
+  const labels = (allowed ?? [])
+    .map((x: any) => (x?.video_label ?? "").toString().trim())
+    .filter(Boolean);
+
+  if (labels.length === 0) return false;
+
+  // Resolve allowed labels -> playback_ids
+  const { data: vids, error: vErr } = await supabase
+    .from("videos")
+    .select("playback_id")
+    .in("label", labels)
+    .eq("active", true);
+
+  if (vErr) return false;
+
+  const allowedPlayback = new Set(
+    (vids ?? [])
+      .map((x: any) => (x?.playback_id ?? "").toString().trim())
+      .filter(Boolean)
+  );
+
+  return allowedPlayback.has(playbackId);
 }
 
 export async function GET(req: NextRequest) {
@@ -50,7 +97,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // If no row exists yet, create it
   if (!data) {
     const { data: created, error: createErr } = await supabase
       .from("room_sessions")
@@ -88,7 +134,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
 
   // Two modes:
-  // A) state/playback update: { state: "playing"|"paused"|"stopped", playback_id: "...or label..." }
+  // A) state/playback update
   // B) command: { command: "seek_delta", value: +10|-10 }
   const command = body?.command as string | undefined;
 
@@ -126,14 +172,9 @@ export async function POST(req: NextRequest) {
   if (command === "seek_delta") {
     const value = Number(body?.value);
     if (!Number.isFinite(value) || value === 0) {
-      return NextResponse.json(
-        { error: "Invalid seek_delta value" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Invalid seek_delta value" }, { status: 400 });
     }
 
-    // Increment command_id atomically-ish:
-    // read current, then update +1. (For your single-controller use this is fine; we can harden later if needed.)
     const { data: cur, error: curErr } = await supabase
       .from("room_sessions")
       .select("command_id")
@@ -163,21 +204,26 @@ export async function POST(req: NextRequest) {
     return new NextResponse(null, { status: 204 });
   }
 
-  // Handle normal state update
+  // Normal state update
   const state = body?.state as string | undefined;
-  const playbackRaw = (body?.playback_id ?? body?.playback) as
-    | string
-    | null
-    | undefined;
+  const playbackRaw = (body?.playback_id ?? body?.playback) as string | null | undefined;
 
   if (!state) {
-    return NextResponse.json(
-      { error: "Missing state (or command)" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Missing state (or command)" }, { status: 400 });
   }
 
   const playback_id = await normalizePlaybackId(playbackRaw ?? null);
+
+  // ✅ ENFORCEMENT: block playing unlicensed content
+  if (state !== "stopped") {
+    const ok = await isPlaybackAllowedForRoom(room, playback_id);
+    if (!ok) {
+      return NextResponse.json(
+        { error: "Video not allowed for this room/licensee" },
+        { status: 403 }
+      );
+    }
+  }
 
   const now = new Date().toISOString();
 
