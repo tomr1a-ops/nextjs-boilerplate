@@ -31,7 +31,7 @@ function activeGlow(isActive: boolean) {
     : {};
 }
 
-export default function ControlClient({ roomIdClean }: { roomIdClean: string }) {
+export default function ControlClient({ roomId }: { roomId: string }) {
   const rid = clean(roomIdClean) || "studioA";
 
   const [videos, setVideos] = useState<VideoRow[]>([]);
