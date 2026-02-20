@@ -21,58 +21,36 @@ function clean(v: any) {
   return (v ?? "").toString().trim();
 }
 
-function getRoomFromPathname(): string {
-  try {
-    const p = window.location.pathname || "";
-    // expecting /control/<roomId>
-    const parts = p.split("/").filter(Boolean);
-    const idx = parts.indexOf("control");
-    if (idx >= 0 && parts[idx + 1]) return clean(parts[idx + 1]);
-  } catch {}
-  return "";
-}
-
-export default function ControlRoomPage({ params }: { params?: { roomId?: string } }) {
-  // robust: prefer params, fallback to URL
-  const [roomId, setRoomId] = useState<string>(clean(params?.roomId) || "");
-
-  useEffect(() => {
-    const p = clean(params?.roomId);
-    if (p) {
-      setRoomId(p);
-      return;
-    }
-    const fromUrl = getRoomFromPathname();
-    setRoomId(fromUrl || "studioA");
-  }, [params?.roomId]);
-
-  const effectiveRoomId = roomId || "studioA";
+export default function ControlRoomPage({ params }: { params: { roomId: string } }) {
+  const roomId = clean(params.roomId) || "studioA";
 
   const [videos, setVideos] = useState<VideoRow[]>([]);
   const [search, setSearch] = useState("");
   const [remoteState, setRemoteState] = useState<string>("loading");
   const [remotePlaybackId, setRemotePlaybackId] = useState<string>("");
+
   const [err, setErr] = useState<string>("");
 
-  // visual feedback
-  const [flash, setFlash] = useState<"play" | "pause" | "stop" | "rw" | "ff" | null>(null);
+  // visual feedback: buttons
+  const [flash, setFlash] = useState<
+    "play" | "pause" | "stop" | "rw" | "ff" | `vid:${string}` | null
+  >(null);
 
   async function loadVideos() {
     setErr("");
-
-    // ✅ STEP 1 CHANGE: include room so /api/videos can filter by licensee
     const qs = new URLSearchParams();
-    qs.set("room", effectiveRoomId);
+    qs.set("room", roomId);
     if (search) qs.set("search", search);
 
     const res = await fetch(`/api/videos?${qs.toString()}`, { cache: "no-store" });
     if (!res.ok) throw new Error(`videos failed: ${res.status}`);
+
     const data = await res.json();
     setVideos((data?.videos ?? []) as VideoRow[]);
   }
 
   async function loadSession() {
-    const res = await fetch(`/api/session?room=${encodeURIComponent(effectiveRoomId)}`, {
+    const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, {
       cache: "no-store",
     });
     if (!res.ok) return;
@@ -81,6 +59,7 @@ export default function ControlRoomPage({ params }: { params?: { roomId?: string
     setRemotePlaybackId(clean(data.playback_id));
   }
 
+  // Poll session every 1s
   useEffect(() => {
     let alive = true;
     const tick = async () => {
@@ -95,8 +74,9 @@ export default function ControlRoomPage({ params }: { params?: { roomId?: string
       alive = false;
       window.clearInterval(id);
     };
-  }, [effectiveRoomId]);
+  }, [roomId]);
 
+  // Load videos initially + when search changes (debounced)
   useEffect(() => {
     let alive = true;
     const t = window.setTimeout(async () => {
@@ -111,7 +91,7 @@ export default function ControlRoomPage({ params }: { params?: { roomId?: string
       alive = false;
       window.clearTimeout(t);
     };
-  }, [search, effectiveRoomId]);
+  }, [roomId, search]);
 
   const nowLabel = useMemo(() => {
     if (!remotePlaybackId) return "";
@@ -121,7 +101,8 @@ export default function ControlRoomPage({ params }: { params?: { roomId?: string
 
   async function setSession(payload: any) {
     setErr("");
-    const res = await fetch(`/api/session?room=${encodeURIComponent(effectiveRoomId)}`, {
+
+    const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
@@ -138,44 +119,13 @@ export default function ControlRoomPage({ params }: { params?: { roomId?: string
       }
     }
 
+    // refresh immediately
     try {
       await loadSession();
     } catch {}
   }
 
-  async function play() {
-    setFlash("play");
-    window.setTimeout(() => setFlash(null), 200);
-    await setSession({
-      state: "playing",
-      playback_id: remotePlaybackId || null,
-      started_at: new Date().toISOString(),
-      paused_at: null,
-    });
-  }
-
-  async function pause() {
-    setFlash("pause");
-    window.setTimeout(() => setFlash(null), 200);
-    await setSession({
-      state: "paused",
-      playback_id: remotePlaybackId || null,
-      paused_at: new Date().toISOString(),
-    });
-  }
-
-  async function stop() {
-    setFlash("stop");
-    window.setTimeout(() => setFlash(null), 200);
-    await setSession({
-      state: "stopped",
-      playback_id: null,
-      paused_at: null,
-    });
-  }
-
   async function playVideo(v: VideoRow) {
-    setErr("");
     await setSession({
       state: "playing",
       playback_id: v.playback_id,
@@ -184,8 +134,34 @@ export default function ControlRoomPage({ params }: { params?: { roomId?: string
     });
   }
 
+  async function pause() {
+    await setSession({
+      state: "paused",
+      playback_id: remotePlaybackId || null,
+      paused_at: new Date().toISOString(),
+    });
+  }
+
+  async function resume() {
+    await setSession({
+      state: "playing",
+      playback_id: remotePlaybackId || null,
+      started_at: new Date().toISOString(),
+      paused_at: null,
+    });
+  }
+
+  async function stop() {
+    await setSession({
+      state: "stopped",
+      playback_id: null,
+      paused_at: null,
+    });
+  }
+
+  // Seek command (uses your /api/session command model)
   async function seekDelta(deltaSeconds: number) {
-    const res = await fetch(`/api/session?room=${encodeURIComponent(effectiveRoomId)}`, {
+    const res = await fetch(`/api/session?room=${encodeURIComponent(roomId)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
@@ -206,15 +182,48 @@ export default function ControlRoomPage({ params }: { params?: { roomId?: string
     }
   }
 
+  async function flashTap(key: typeof flash) {
+    setFlash(key);
+    window.setTimeout(() => setFlash(null), 180);
+  }
+
+  async function handlePlay() {
+    setErr("");
+    await flashTap("play");
+    try {
+      await resume();
+    } catch (e: any) {
+      setErr(e?.message || "Play failed");
+    }
+  }
+
+  async function handlePause() {
+    setErr("");
+    await flashTap("pause");
+    try {
+      await pause();
+    } catch (e: any) {
+      setErr(e?.message || "Pause failed");
+    }
+  }
+
+  async function handleStop() {
+    setErr("");
+    await flashTap("stop");
+    try {
+      await stop();
+    } catch (e: any) {
+      setErr(e?.message || "Stop failed");
+    }
+  }
+
   async function handleSeek(delta: number, type: "rw" | "ff") {
     setErr("");
-    setFlash(type);
+    await flashTap(type);
     try {
       await seekDelta(delta);
     } catch (e: any) {
       setErr(e?.message || "Seek failed");
-    } finally {
-      window.setTimeout(() => setFlash(null), 250);
     }
   }
 
@@ -231,7 +240,7 @@ export default function ControlRoomPage({ params }: { params?: { roomId?: string
       <div style={{ maxWidth: 980, margin: "0 auto" }}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
           <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900, letterSpacing: 0.2 }}>
-            IMAOS Control — <span style={{ opacity: 0.85 }}>{effectiveRoomId}</span>
+            IMAOS Control — <span style={{ opacity: 0.85 }}>{roomId}</span>
           </h1>
 
           <div
@@ -257,53 +266,54 @@ export default function ControlRoomPage({ params }: { params?: { roomId?: string
           </div>
         </div>
 
+        {/* Controls */}
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 14 }}>
           <button
-            onClick={play}
+            onClick={handlePlay}
             style={{
               padding: "12px 16px",
               borderRadius: 14,
               border: "1px solid rgba(255,255,255,0.12)",
-              background: flash === "play" ? "#2cff2c" : "#1f7a1f",
+              background: flash === "play" ? "#2dff2d" : "#1f7a1f",
               color: "#000",
               fontWeight: 900,
               cursor: "pointer",
               minWidth: 120,
-              transition: "background 0.12s ease",
+              transition: "background 0.15s ease",
             }}
           >
             PLAY
           </button>
 
           <button
-            onClick={pause}
+            onClick={handlePause}
             style={{
               padding: "12px 16px",
               borderRadius: 14,
               border: "1px solid rgba(255,255,255,0.12)",
-              background: flash === "pause" ? "#777" : "#333",
+              background: flash === "pause" ? "#666" : "#333",
               color: "#fff",
               fontWeight: 900,
               cursor: "pointer",
               minWidth: 120,
-              transition: "background 0.12s ease",
+              transition: "background 0.15s ease",
             }}
           >
             PAUSE
           </button>
 
           <button
-            onClick={stop}
+            onClick={handleStop}
             style={{
               padding: "12px 16px",
               borderRadius: 14,
               border: "1px solid rgba(255,255,255,0.12)",
-              background: flash === "stop" ? "#ff4040" : "#5a1d1d",
+              background: flash === "stop" ? "#ff4d4d" : "#5a1d1d",
               color: "#fff",
               fontWeight: 900,
               cursor: "pointer",
               minWidth: 120,
-              transition: "background 0.12s ease",
+              transition: "background 0.15s ease",
             }}
           >
             STOP
@@ -320,7 +330,7 @@ export default function ControlRoomPage({ params }: { params?: { roomId?: string
               fontWeight: 900,
               cursor: "pointer",
               minWidth: 120,
-              transition: "background 0.12s ease",
+              transition: "background 0.15s ease",
             }}
           >
             RW 10s
@@ -337,7 +347,7 @@ export default function ControlRoomPage({ params }: { params?: { roomId?: string
               fontWeight: 900,
               cursor: "pointer",
               minWidth: 120,
-              transition: "background 0.12s ease",
+              transition: "background 0.15s ease",
             }}
           >
             FF 10s
@@ -378,6 +388,7 @@ export default function ControlRoomPage({ params }: { params?: { roomId?: string
           </div>
         ) : null}
 
+        {/* Video grid */}
         <div
           style={{
             marginTop: 16,
@@ -388,22 +399,37 @@ export default function ControlRoomPage({ params }: { params?: { roomId?: string
         >
           {videos.map((v) => {
             const isActive = remotePlaybackId && v.playback_id === remotePlaybackId;
+            const flashed = flash === `vid:${v.id}`;
+
             return (
               <button
                 key={v.id}
-                onClick={() => playVideo(v)}
+                onClick={async () => {
+                  setErr("");
+                  await flashTap(`vid:${v.id}`);
+                  try {
+                    await playVideo(v);
+                  } catch (e: any) {
+                    setErr(e?.message || "Play failed");
+                  }
+                }}
                 style={{
                   padding: "14px 12px",
                   borderRadius: 16,
                   border: isActive
                     ? "2px solid rgba(0,255,140,0.75)"
                     : "1px solid rgba(255,255,255,0.12)",
-                  background: isActive ? "rgba(0,255,140,0.12)" : "rgba(255,255,255,0.06)",
+                  background: flashed
+                    ? "rgba(255,255,255,0.18)"
+                    : isActive
+                    ? "rgba(0,255,140,0.12)"
+                    : "rgba(255,255,255,0.06)",
                   color: "#fff",
                   fontWeight: 950,
                   letterSpacing: 0.3,
                   cursor: "pointer",
                   minHeight: 58,
+                  transition: "background 0.12s ease",
                 }}
                 title={v.playback_id}
               >
@@ -416,7 +442,7 @@ export default function ControlRoomPage({ params }: { params?: { roomId?: string
         <div style={{ marginTop: 18, opacity: 0.7, fontSize: 12, lineHeight: 1.35 }}>
           Tip: open this on your phone/tablet and bookmark it.
           <br />
-          URL format: <span style={{ fontFamily: "monospace" }}>/control/&lt;roomId&gt;</span>
+          URL format: <span style={{ fontFamily: "monospace" }}>/control/studioA</span>
         </div>
       </div>
     </div>
