@@ -59,7 +59,7 @@ export async function GET(req: Request) {
     // 2) licensee -> allowed labels
     const { data: accessRows, error: accessErr } = await supabase
       .from("licensee_video_access")
-      .select("label")
+      .select("video_label")
       .eq("licensee_id", licenseeId);
 
     if (accessErr) {
@@ -67,7 +67,7 @@ export async function GET(req: Request) {
     }
 
     const labels = (accessRows || [])
-      .map((r: any) => r.label as string)
+      .map((r: any) => r.video_label as string)
       .filter(Boolean);
 
     if (labels.length === 0) {
