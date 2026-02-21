@@ -1,25 +1,19 @@
-import { loginAction } from "./actions";
+"use server";
 
-export default function LoginPage({
-  searchParams,
-}: {
-  searchParams?: { error?: string };
-}) {
-  const error = searchParams?.error;
+import { redirect } from "next/navigation";
+import { supabaseServer } from "@/lib/supabase/server";
 
-  return (
-    <div style={{ padding: 24, color: "#fff" }}>
-      <h1>Login</h1>
+export async function loginAction(formData: FormData) {
+  const email = String(formData.get("email") || "").trim();
+  const password = String(formData.get("password") || "").trim();
 
-      {error ? (
-        <p style={{ color: "salmon" }}>Error: {decodeURIComponent(error)}</p>
-      ) : null}
+  const supabase = supabaseServer();
 
-      <form action={loginAction} style={{ display: "grid", gap: 12, maxWidth: 360 }}>
-        <input name="email" placeholder="email" />
-        <input name="password" placeholder="password" type="password" />
-        <button type="submit">Sign in</button>
-      </form>
-    </div>
-  );
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+
+  if (error) {
+    redirect(`/login?error=${encodeURIComponent(error.message)}`);
+  }
+
+  redirect("/admin");
 }
