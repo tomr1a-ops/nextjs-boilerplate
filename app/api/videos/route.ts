@@ -1,13 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { requireAdminRole } from "@/lib/adminAuth";
 
 export const runtime = "nodejs";
 
-export async function GET(req: NextRequest) {
-  const gate = await requireAdminRole(req, ["super_admin", "admin"]);
-  if (!gate.ok) return gate.res;
-
+export async function GET() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const service = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
