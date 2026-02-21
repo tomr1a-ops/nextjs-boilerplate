@@ -1,54 +1,64 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
+import { supabaseServer } from "@/lib/supabase/server";
 
 export async function requireAdminRole(
-  req: NextRequest,
-  allowed: string[] = ["super_admin", "admin"]
-) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  req?: NextRequest,
+  allowedRoles: string[] = ["super_admin", "admin"]
+): Promise<{ user: any; role: string; res?: NextResponse }> {
+  // 1) Use the cookie session (anon) to get the currently logged-in user
+  const supabase = await supabaseServer();
+  const { data } = await supabase.auth.getUser();
+  const user = data?.user;
 
-  const res = NextResponse.next();
-
-  const supabase = createServerClient(url, anon, {
-    cookies: {
-      getAll() {
-        return req.cookies.getAll();
-      },
-      setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value, options }) => {
-          res.cookies.set(name, value, options);
-        });
-      },
-    },
-  });
-
-  const { data: userData, error: userErr } = await supabase.auth.getUser();
-  const user = userData?.user;
-
-  if (userErr || !user) {
-    throw NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user) {
+    return {
+      user: null,
+      role: "",
+      res: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+    };
   }
 
-  const { data: row, error: roleErr } = await supabase
+  // 2) Use service role to read admin_users (no RLS issues)
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceKey) {
+    return {
+      user,
+      role: "",
+      res: NextResponse.json(
+        { error: "Missing SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY" },
+        { status: 500 }
+      ),
+    };
+  }
+
+  const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+
+  const { data: row, error } = await admin
     .from("admin_users")
-    .select("role, active")
+    .select("role")
     .eq("user_id", user.id)
     .maybeSingle();
 
-  if (roleErr) {
-    throw NextResponse.json(
-      { error: `Admin role lookup failed: ${roleErr.message}` },
-      { status: 500 }
-    );
+  if (error) {
+    return {
+      user,
+      role: "",
+      res: NextResponse.json({ error: `Admin role lookup failed: ${error.message}` }, { status: 403 }),
+    };
   }
 
   const role = (row?.role || "").toString();
-  const active = row?.active !== false;
 
-  if (!active || !role || !allowed.includes(role)) {
-    throw NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!role || (allowedRoles.length && !allowedRoles.includes(role))) {
+    return {
+      user,
+      role,
+      res: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
+    };
   }
 
-  return { user, role, res };
+  return { user, role };
 }
