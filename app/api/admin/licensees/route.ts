@@ -1,27 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { requireAdminRole } from "@/lib/adminAuth";
+import { requireAdminRole } from "@/lib/auth/requireAdmin";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-function jsonError(message: string, status = 400) {
-  return NextResponse.json({ error: message }, { status });
-}
-
 export async function GET(req: NextRequest) {
   try {
-    // ✅ Must be logged in AND in admin_users
-    await requireAdminRole(req, ["super_admin", "admin"]);
+    await requireAdminRole(req);
 
     const supabaseUrl =
       process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !serviceKey) {
-      return jsonError(
-        "Missing SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) or SUPABASE_SERVICE_ROLE_KEY",
-        500
+      return NextResponse.json(
+        {
+          error:
+            "Missing SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) or SUPABASE_SERVICE_ROLE_KEY",
+        },
+        { status: 500 }
       );
     }
 
@@ -34,12 +33,13 @@ export async function GET(req: NextRequest) {
       .select("id,name,code,status,created_at")
       .order("created_at", { ascending: false });
 
-    if (error) return jsonError(error.message, 500);
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
 
-    return NextResponse.json({ licensees: data ?? [] });
+    return NextResponse.json({ licensees: data ?? [] }, { status: 200 });
   } catch (err: any) {
-    // If requireAdminRole threw a NextResponse (401/403/500), return it directly
-    if (err instanceof NextResponse) return err;
-    return jsonError(err?.message || "Server error", 500);
+    // requireAdminRole throws a NextResponse.json(...) on failure
+    return err;
   }
 }
