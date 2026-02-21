@@ -1,894 +1,397 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 type Licensee = {
   id: string;
   name: string;
   code: string;
-  status: "active" | "disabled" | string;
+  status: string;
   created_at?: string;
+  rooms?: string[];
+  allowed_videos?: string[]; // labels (e.g., "AL1V1")
 };
 
-type Video = {
-  id?: string;
-  label: string;
-  playback_id?: string | null;
+type VideoRow = {
+  id: string;
+  label: string;     // "AL1V1"
+  title?: string;    // optional display name
   sort_order?: number | null;
-  active?: boolean | null;
   created_at?: string;
 };
 
-function clean(v: any) {
-  return (v ?? "").toString().trim();
-}
+async function apiJson<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
+  const res = await fetch(input, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(init?.headers || {}),
+    },
+    credentials: "include",
+  });
 
-function upper(v: any) {
-  return clean(v).toUpperCase();
-}
-
-async function fetchJson(url: string, opts: RequestInit = {}) {
-  const res = await fetch(url, { cache: "no-store", ...opts });
-  const text = await res.text().catch(() => "");
   let data: any = null;
   try {
-    data = text ? JSON.parse(text) : null;
+    data = await res.json();
   } catch {
-    data = text;
+    // ignore
   }
+
   if (!res.ok) {
-    const msg =
-      (data && typeof data === "object" && data.error) ||
-      (typeof data === "string" ? data : "") ||
-      `Request failed (${res.status})`;
+    const msg = data?.error || `Request failed (${res.status})`;
     throw new Error(msg);
   }
-  return data;
+
+  return data as T;
 }
 
 export default function AdminClient() {
-  const [adminKey, setAdminKey] = useState("");
-  const [keySaved, setKeySaved] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string>("");
 
   const [licensees, setLicensees] = useState<Licensee[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
 
-  const [rooms, setRooms] = useState<string[]>([]);
-  const [newRoom, setNewRoom] = useState("");
-
-  const [catalog, setCatalog] = useState<Video[]>([]);
-  const [allowedLabels, setAllowedLabels] = useState<Set<string>>(new Set());
-  const [savingAllowed, setSavingAllowed] = useState(false);
-
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-
-  // Add licensee form
-  const [showAdd, setShowAdd] = useState(false);
-  const [addName, setAddName] = useState("");
-  const [addCode, setAddCode] = useState("");
-  const [addStatus, setAddStatus] = useState<"active" | "disabled">("active");
+  const [videos, setVideos] = useState<VideoRow[]>([]);
+  const [videosLoading, setVideosLoading] = useState(true);
 
   const selected = useMemo(
     () => licensees.find((l) => l.id === selectedId) || null,
     [licensees, selectedId]
   );
 
-  function headersWithKey(extra?: Record<string, string>) {
-    const h: Record<string, string> = {
-      "Content-Type": "application/json",
-      ...(extra || {}),
-    };
-    if (adminKey) h["x-admin-key"] = adminKey;
-    return h;
-  }
+  const [roomInput, setRoomInput] = useState("");
+  const [rooms, setRooms] = useState<string[]>([]);
+  const [allowed, setAllowed] = useState<Set<string>>(new Set());
+  const [savingVideos, setSavingVideos] = useState(false);
 
-  async function loadLicensees() {
-    setErr("");
-    const data = await fetchJson("/api/admin/licensees", {
-      headers: headersWithKey(),
-    });
-    const list = (data?.licensees ?? []) as Licensee[];
-    setLicensees(list);
-
-    // Auto-select first if none selected
-    if (!selectedId && list.length > 0) setSelectedId(list[0].id);
-    // If selected was deleted, fallback
-    if (selectedId && !list.find((x) => x.id === selectedId)) {
-      setSelectedId(list[0]?.id || "");
-    }
-  }
-
-  async function loadCatalog() {
-    setErr("");
-    const data = await fetchJson("/api/admin/videos", {
-      headers: headersWithKey(),
-    });
-    setCatalog((data?.videos ?? []) as Video[]);
-  }
-
-  async function loadRooms(licenseeId: string) {
-    setErr("");
-    const data = await fetchJson(`/api/admin/licensees/${licenseeId}/rooms`, {
-      headers: headersWithKey(),
-    });
-    setRooms(((data?.rooms ?? []) as string[]).map((r) => clean(r)).filter(Boolean));
-  }
-
-  async function loadAllowedVideos(licenseeId: string) {
-    setErr("");
-    const data = await fetchJson(`/api/admin/licensees/${licenseeId}/videos`, {
-      headers: headersWithKey(),
-    });
-
-    const labels = (data?.video_labels ?? []) as string[];
-    const set = new Set(labels.map((x) => upper(x)).filter(Boolean));
-    setAllowedLabels(set);
-  }
-
-  // Load admin key from localStorage
-  useEffect(() => {
+  const refresh = async () => {
+    setError("");
+    setLoading(true);
     try {
-      const k = localStorage.getItem("imaos_admin_key") || "";
-      if (k) {
-        setAdminKey(k);
-        setKeySaved(true);
-      }
-    } catch {}
+      const data = await apiJson<{ licensees: Licensee[] }>("/api/admin/licensees", { method: "GET" });
+      setLicensees(data.licensees || []);
+
+      const stillExists =
+        selectedId && (data.licensees || []).some((l) => l.id === selectedId);
+      if (!stillExists) setSelectedId(data.licensees?.[0]?.id || "");
+    } catch (e: any) {
+      setError(e?.message || "Failed to load licensees");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadVideos = async () => {
+    setVideosLoading(true);
+    try {
+      const data = await apiJson<{ videos: VideoRow[] }>("/api/admin/videos", { method: "GET" });
+      const rows = (data.videos || []).filter(v => v?.label);
+      setVideos(rows);
+    } catch (e: any) {
+      // If this fails, admin can still load licensees, but video list will be empty
+      setError((prev) => prev || (e?.message || "Failed to load videos list"));
+      setVideos([]);
+    } finally {
+      setVideosLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    (async () => {
+      await Promise.all([refresh(), loadVideos()]);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // After key is available: load licensees + catalog
   useEffect(() => {
-    if (!adminKey) return;
-    let alive = true;
-    (async () => {
-      try {
-        setBusy(true);
-        await Promise.all([loadLicensees(), loadCatalog()]);
-      } catch (e: any) {
-        if (!alive) return;
-        setErr(e?.message || "Failed to load admin data");
-      } finally {
-        if (alive) setBusy(false);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [adminKey]);
-
-  // When selected licensee changes: load rooms + allowed
-  useEffect(() => {
-    if (!adminKey) return;
-    if (!selectedId) return;
-    let alive = true;
-    (async () => {
-      try {
-        setBusy(true);
-        await Promise.all([loadRooms(selectedId), loadAllowedVideos(selectedId)]);
-      } catch (e: any) {
-        if (!alive) return;
-        setErr(e?.message || "Failed to load licensee details");
-      } finally {
-        if (alive) setBusy(false);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, adminKey]);
-
-  function saveKey() {
-    setErr("");
-    const k = clean(adminKey);
-    if (!k) {
-      setErr("Enter your ADMIN key first.");
+    if (!selected) {
+      setRooms([]);
+      setAllowed(new Set());
       return;
     }
-    try {
-      localStorage.setItem("imaos_admin_key", k);
-      setKeySaved(true);
-    } catch {}
-  }
+    setRooms(Array.isArray(selected.rooms) ? selected.rooms : []);
+    setAllowed(new Set(Array.isArray(selected.allowed_videos) ? selected.allowed_videos : []));
+  }, [selected]);
 
-  function forgetKey() {
+  const addLicensee = async () => {
     try {
-      localStorage.removeItem("imaos_admin_key");
-    } catch {}
-    setAdminKey("");
-    setKeySaved(false);
-    setLicensees([]);
-    setSelectedId("");
-    setRooms([]);
-    setCatalog([]);
-    setAllowedLabels(new Set());
-  }
+      const name = window.prompt("Licensee name (e.g., Atlanta 1):");
+      if (!name) return;
+      const code = window.prompt("Licensee code (e.g., AT100):");
+      if (!code) return;
 
-  async function addLicensee() {
-    setErr("");
-    const name = clean(addName);
-    const code = upper(addCode);
-    if (!name) return setErr("Licensee name is required.");
-    if (!code) return setErr("Licensee code is required (ex: ATLANTA).");
-
-    try {
-      setBusy(true);
-      const data = await fetchJson("/api/admin/licensees", {
+      await apiJson<{ licensee: Licensee }>("/api/admin/licensees", {
         method: "POST",
-        headers: headersWithKey(),
-        body: JSON.stringify({ name, code, status: addStatus }),
+        body: JSON.stringify({ name, code, status: "active" }),
       });
 
-      const created: Licensee | undefined = data?.licensee;
-      setShowAdd(false);
-      setAddName("");
-      setAddCode("");
-      setAddStatus("active");
-
-      await loadLicensees();
-      if (created?.id) setSelectedId(created.id);
+      await refresh();
     } catch (e: any) {
-      setErr(e?.message || "Failed to create licensee");
-    } finally {
-      setBusy(false);
+      setError(e?.message || "Failed to add licensee");
     }
-  }
+  };
 
-  async function addRoomToLicensee() {
-    if (!selectedId) return;
-    setErr("");
-    const room_id = clean(newRoom);
-    if (!room_id) return setErr("Room ID is required (ex: atlanta1).");
+  const addRoom = () => {
+    const v = roomInput.trim();
+    if (!v) return;
+    if (rooms.includes(v)) return;
+    setRooms((prev) => [...prev, v]);
+    setRoomInput("");
+  };
 
-    try {
-      setBusy(true);
-      await fetchJson(`/api/admin/licensees/${selectedId}/rooms`, {
-        method: "POST",
-        headers: headersWithKey(),
-        body: JSON.stringify({ room_id }),
-      });
-      setNewRoom("");
-      await loadRooms(selectedId);
-    } catch (e: any) {
-      setErr(e?.message || "Failed to add room");
-    } finally {
-      setBusy(false);
-    }
-  }
+  const removeRoom = (room: string) => {
+    setRooms((prev) => prev.filter((r) => r !== room));
+  };
 
-  async function removeRoom(room_id: string) {
-    if (!selectedId) return;
-    setErr("");
-    try {
-      setBusy(true);
-      // This route supports DELETE ?room_id=...
-      await fetchJson(
-        `/api/admin/licensees/${selectedId}/rooms?room_id=${encodeURIComponent(room_id)}`,
-        {
-          method: "DELETE",
-          headers: headersWithKey(),
-        }
-      );
-      await loadRooms(selectedId);
-    } catch (e: any) {
-      setErr(e?.message || "Failed to remove room");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function toggleAllowed(label: string) {
-    const L = upper(label);
-    setAllowedLabels((prev) => {
+  const toggleAllowed = (label: string) => {
+    setAllowed((prev) => {
       const next = new Set(prev);
-      if (next.has(L)) next.delete(L);
-      else next.add(L);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
       return next;
     });
-  }
+  };
 
-  async function saveAllowed() {
-    if (!selectedId) return;
-    setErr("");
-    setSavingAllowed(true);
+  const saveRooms = async () => {
+    if (!selected) return;
+    setError("");
     try {
-      const video_labels = Array.from(allowedLabels.values()).sort();
-      await fetchJson(`/api/admin/licensees/${selectedId}/videos`, {
+      await apiJson(`/api/admin/licensees/${selected.id}`, {
         method: "PUT",
-        headers: headersWithKey(),
-        body: JSON.stringify({ video_labels }),
+        body: JSON.stringify({ rooms }),
       });
-      // Reload to confirm
-      await loadAllowedVideos(selectedId);
+      await refresh();
     } catch (e: any) {
-      setErr(e?.message || "Failed to save allowed videos");
-    } finally {
-      setSavingAllowed(false);
+      setError(e?.message || "Failed to save rooms");
     }
-  }
+  };
 
-  const activeCount = useMemo(() => licensees.filter((l) => l.status === "active").length, [licensees]);
+  const saveAllowedVideos = async () => {
+    if (!selected) return;
+    setSavingVideos(true);
+    setError("");
+    try {
+      const allowed_videos = Array.from(allowed);
+
+      await apiJson(`/api/admin/licensees/${selected.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ allowed_videos }),
+      });
+
+      await refresh();
+    } catch (e: any) {
+      setError(e?.message || "Failed to save allowed videos");
+    } finally {
+      setSavingVideos(false);
+    }
+  };
+
+  const statusBadge = (s: string) => {
+    const cls =
+      s === "active"
+        ? "bg-green-700/40 border-green-600 text-green-100"
+        : "bg-gray-700/40 border-gray-600 text-gray-100";
+    return (
+      <span className={`ml-auto text-xs px-2 py-1 rounded-full border ${cls}`}>
+        {s}
+      </span>
+    );
+  };
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "#0b0b0b",
-        color: "#fff",
-        padding: 16,
-        fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
-      }}
-    >
-      <div style={{ maxWidth: 1150, margin: "0 auto" }}>
-        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-          <div style={{ fontSize: 26, fontWeight: 950, letterSpacing: 0.2 }}>IMAOS Command Center</div>
-          <div style={{ opacity: 0.75, fontSize: 13 }}>
-            Licensees: <b>{licensees.length}</b> (active: <b>{activeCount}</b>)
-          </div>
-          <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center" }}>
-            {busy ? (
-              <div style={{ fontSize: 12, opacity: 0.8 }}>Loading…</div>
-            ) : (
-              <div style={{ fontSize: 12, opacity: 0.8 }}>Ready</div>
-            )}
-          </div>
+    <div className="min-h-[70vh] text-white">
+      <div className="flex items-center justify-between mb-4">
+        <div className="text-3xl font-bold">IMAOS Command Center</div>
+        <div className="text-sm opacity-80">Ready</div>
+      </div>
+
+      {error ? (
+        <div className="mb-4 rounded-lg border border-red-700 bg-red-900/40 px-4 py-3">
+          {error}
         </div>
+      ) : null}
 
-        {/* Admin key bar */}
-        <div
-          style={{
-            marginTop: 12,
-            padding: 12,
-            borderRadius: 14,
-            border: "1px solid rgba(255,255,255,0.10)",
-            background: "rgba(255,255,255,0.04)",
-            display: "flex",
-            gap: 10,
-            flexWrap: "wrap",
-            alignItems: "center",
-          }}
-        >
-          <div style={{ fontWeight: 900 }}>Admin Key</div>
-          <input
-            value={adminKey}
-            onChange={(e) => {
-              setAdminKey(e.target.value);
-              setKeySaved(false);
-            }}
-            placeholder="paste ADMIN key…"
-            style={{
-              flex: "1 1 360px",
-              minWidth: 260,
-              padding: "10px 12px",
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: "rgba(0,0,0,0.35)",
-              color: "#fff",
-              outline: "none",
-              fontSize: 14,
-            }}
-          />
-          <button
-            onClick={saveKey}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,0.14)",
-              background: "#16a34a",
-              color: "#000",
-              fontWeight: 950,
-              cursor: "pointer",
-            }}
-          >
-            Save Key
-          </button>
-          <button
-            onClick={forgetKey}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,0.14)",
-              background: "#374151",
-              color: "#fff",
-              fontWeight: 900,
-              cursor: "pointer",
-            }}
-          >
-            Forget
-          </button>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        <div className="lg:col-span-4 rounded-2xl border border-white/10 bg-black/30 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-lg font-semibold">Licensees</div>
+            <button
+              onClick={addLicensee}
+              className="rounded-xl bg-green-600 hover:bg-green-500 text-black font-semibold px-4 py-2"
+            >
+              + Add New
+            </button>
+          </div>
 
-          {keySaved ? (
-            <div style={{ fontSize: 12, opacity: 0.8 }}>
-              ✅ saved in this browser (localStorage)
-            </div>
+          {loading ? (
+            <div className="opacity-70">Loading…</div>
+          ) : licensees.length === 0 ? (
+            <div className="opacity-70">No licensees found.</div>
           ) : (
-            <div style={{ fontSize: 12, opacity: 0.6 }}>
-              (not saved yet)
+            <div className="space-y-3">
+              {licensees.map((l) => {
+                const isSel = l.id === selectedId;
+                return (
+                  <button
+                    key={l.id}
+                    onClick={() => setSelectedId(l.id)}
+                    className={`w-full text-left rounded-2xl border px-4 py-3 transition ${
+                      isSel
+                        ? "bg-green-700/25 border-green-500"
+                        : "bg-black/20 border-white/10 hover:border-white/20"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="font-semibold">{l.name}</div>
+                      {statusBadge(l.status)}
+                    </div>
+                    <div className="text-sm opacity-75 mt-1">Code: {l.code}</div>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
 
-        {err ? (
-          <div
-            style={{
-              marginTop: 12,
-              padding: "10px 12px",
-              borderRadius: 12,
-              background: "rgba(255,0,0,0.12)",
-              border: "1px solid rgba(255,0,0,0.20)",
-              color: "rgba(255,220,220,0.95)",
-              fontWeight: 800,
-            }}
-          >
-            {err}
-          </div>
-        ) : null}
-
-        {/* Main grid */}
-        <div
-          style={{
-            marginTop: 14,
-            display: "grid",
-            gridTemplateColumns: "360px 1fr",
-            gap: 14,
-            alignItems: "start",
-          }}
-        >
-          {/* LEFT: Licensee list */}
-          <div
-            style={{
-              borderRadius: 16,
-              border: "1px solid rgba(255,255,255,0.10)",
-              background: "rgba(255,255,255,0.03)",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                padding: 12,
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                borderBottom: "1px solid rgba(255,255,255,0.08)",
-              }}
-            >
-              <div style={{ fontWeight: 950 }}>Licensees</div>
-              <button
-                onClick={() => setShowAdd(true)}
-                style={{
-                  padding: "8px 10px",
-                  borderRadius: 12,
-                  border: "1px solid rgba(255,255,255,0.14)",
-                  background: "#16a34a",
-                  color: "#000",
-                  fontWeight: 950,
-                  cursor: "pointer",
-                }}
-              >
-                + Add New
-              </button>
-            </div>
-
-            <div style={{ maxHeight: "70vh", overflow: "auto" }}>
-              {licensees.length === 0 ? (
-                <div style={{ padding: 12, opacity: 0.8 }}>
-                  {adminKey ? "No licensees found." : "Enter Admin Key to load licensees."}
+        <div className="lg:col-span-8 rounded-2xl border border-white/10 bg-black/30 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <div className="text-xl font-bold">
+                {selected ? selected.name : "Select a licensee"}
+              </div>
+              {selected ? (
+                <div className="text-sm opacity-75">
+                  Code: {selected.code} • Status:{" "}
+                  <span className="font-semibold">{selected.status}</span>
                 </div>
               ) : (
-                licensees.map((l) => {
-                  const active = l.id === selectedId;
-                  return (
-                    <button
-                      key={l.id}
-                      onClick={() => setSelectedId(l.id)}
-                      style={{
-                        width: "100%",
-                        textAlign: "left",
-                        padding: 12,
-                        border: "none",
-                        borderBottom: "1px solid rgba(255,255,255,0.06)",
-                        background: active ? "rgba(0,255,140,0.10)" : "transparent",
-                        color: "#fff",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                        <div style={{ fontWeight: 950, fontSize: 15 }}>{l.name}</div>
-                        <div
-                          style={{
-                            fontSize: 12,
-                            padding: "2px 8px",
-                            borderRadius: 999,
-                            background: l.status === "active" ? "rgba(22,163,74,0.75)" : "rgba(239,68,68,0.75)",
-                            color: "#000",
-                            fontWeight: 950,
-                            height: 20,
-                          }}
-                        >
-                          {l.status}
-                        </div>
-                      </div>
-                      <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75 }}>
-                        Code: <b>{l.code}</b>
-                      </div>
-                    </button>
-                  );
-                })
+                <div className="text-sm opacity-75">
+                  Click a licensee on the left to manage rooms + allowed videos.
+                </div>
               )}
             </div>
+
+            <button
+              onClick={refresh}
+              className="rounded-xl bg-gray-700 hover:bg-gray-600 px-4 py-2 font-semibold"
+            >
+              Refresh
+            </button>
           </div>
 
-          {/* RIGHT: Details */}
-          <div
-            style={{
-              borderRadius: 16,
-              border: "1px solid rgba(255,255,255,0.10)",
-              background: "rgba(255,255,255,0.03)",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                padding: 12,
-                borderBottom: "1px solid rgba(255,255,255,0.08)",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                gap: 12,
-                flexWrap: "wrap",
-              }}
-            >
-              <div>
-                <div style={{ fontWeight: 950, fontSize: 16 }}>
-                  {selected ? selected.name : "Select a licensee"}
+          {!selected ? null : (
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                <div className="font-semibold mb-2">Rooms</div>
+                <div className="flex gap-2">
+                  <input
+                    value={roomInput}
+                    onChange={(e) => setRoomInput(e.target.value)}
+                    placeholder="ex: atlanta1"
+                    className="flex-1 rounded-xl bg-black/40 border border-white/10 px-3 py-2 outline-none"
+                  />
+                  <button
+                    onClick={addRoom}
+                    className="rounded-xl bg-green-600 hover:bg-green-500 text-black font-semibold px-4 py-2"
+                  >
+                    + Add Room
+                  </button>
+                  <button
+                    onClick={saveRooms}
+                    className="rounded-xl bg-gray-700 hover:bg-gray-600 px-4 py-2 font-semibold"
+                  >
+                    Save Rooms
+                  </button>
                 </div>
-                {selected ? (
-                  <div style={{ fontSize: 12, opacity: 0.75 }}>
-                    Code: <b>{selected.code}</b> • Status: <b>{selected.status}</b>
-                  </div>
-                ) : null}
-              </div>
 
-              <button
-                onClick={async () => {
-                  if (!adminKey) return setErr("Enter Admin Key first.");
-                  try {
-                    setBusy(true);
-                    await Promise.all([loadLicensees(), selectedId ? loadRooms(selectedId) : Promise.resolve(), selectedId ? loadAllowedVideos(selectedId) : Promise.resolve(), loadCatalog()]);
-                  } catch (e: any) {
-                    setErr(e?.message || "Refresh failed");
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
-                style={{
-                  padding: "10px 14px",
-                  borderRadius: 12,
-                  border: "1px solid rgba(255,255,255,0.14)",
-                  background: "#374151",
-                  color: "#fff",
-                  fontWeight: 900,
-                  cursor: "pointer",
-                }}
-              >
-                Refresh
-              </button>
-            </div>
-
-            {!selected ? (
-              <div style={{ padding: 12, opacity: 0.8 }}>
-                Click a licensee on the left to manage rooms + allowed videos.
-              </div>
-            ) : (
-              <div style={{ padding: 12, display: "grid", gap: 14 }}>
-                {/* Rooms */}
-                <div
-                  style={{
-                    border: "1px solid rgba(255,255,255,0.10)",
-                    borderRadius: 14,
-                    background: "rgba(0,0,0,0.25)",
-                    padding: 12,
-                  }}
-                >
-                  <div style={{ fontWeight: 950, marginBottom: 10 }}>Rooms</div>
-
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    <input
-                      value={newRoom}
-                      onChange={(e) => setNewRoom(e.target.value)}
-                      placeholder='ex: atlanta1'
-                      style={{
-                        flex: "1 1 220px",
-                        minWidth: 200,
-                        padding: "10px 12px",
-                        borderRadius: 12,
-                        border: "1px solid rgba(255,255,255,0.12)",
-                        background: "rgba(255,255,255,0.06)",
-                        color: "#fff",
-                        outline: "none",
-                      }}
-                    />
-                    <button
-                      onClick={addRoomToLicensee}
-                      style={{
-                        padding: "10px 14px",
-                        borderRadius: 12,
-                        border: "1px solid rgba(255,255,255,0.14)",
-                        background: "#16a34a",
-                        color: "#000",
-                        fontWeight: 950,
-                        cursor: "pointer",
-                      }}
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {rooms.map((r) => (
+                    <span
+                      key={r}
+                      className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/30 px-3 py-1"
                     >
-                      + Add Room
-                    </button>
-                  </div>
-
-                  <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    {rooms.length === 0 ? (
-                      <div style={{ opacity: 0.75, fontSize: 13 }}>No rooms assigned yet.</div>
-                    ) : (
-                      rooms.map((r) => (
-                        <div
-                          key={r}
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 8,
-                            padding: "6px 10px",
-                            borderRadius: 999,
-                            border: "1px solid rgba(255,255,255,0.12)",
-                            background: "rgba(255,255,255,0.06)",
-                            fontSize: 13,
-                            fontWeight: 800,
-                          }}
-                        >
-                          {r}
-                          <button
-                            onClick={() => removeRoom(r)}
-                            title="Remove room"
-                            style={{
-                              border: "none",
-                              background: "rgba(255,0,0,0.25)",
-                              color: "#fff",
-                              fontWeight: 950,
-                              cursor: "pointer",
-                              padding: "2px 8px",
-                              borderRadius: 999,
-                            }}
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))
-                    )}
-                  </div>
+                      <span className="font-semibold">{r}</span>
+                      <button
+                        onClick={() => removeRoom(r)}
+                        className="h-5 w-5 rounded-full bg-red-700/60 hover:bg-red-700 text-white text-xs leading-5"
+                        title="Remove"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
                 </div>
+              </div>
 
-                {/* Allowed videos */}
-                <div
-                  style={{
-                    border: "1px solid rgba(255,255,255,0.10)",
-                    borderRadius: 14,
-                    background: "rgba(0,0,0,0.25)",
-                    padding: 12,
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-                    <div>
-                      <div style={{ fontWeight: 950 }}>Allowed Videos</div>
-                      <div style={{ fontSize: 12, opacity: 0.75 }}>
-                        Check labels this licensee can play (enforced by <code>/api/session</code> + <code>/api/videos</code>)
-                      </div>
+              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-semibold">Allowed Videos</div>
+                    <div className="text-xs opacity-70 mt-1">
+                      Loaded from your videos table (via /api/admin/videos)
                     </div>
-
-                    <button
-                      onClick={saveAllowed}
-                      disabled={savingAllowed}
-                      style={{
-                        padding: "10px 14px",
-                        borderRadius: 12,
-                        border: "1px solid rgba(255,255,255,0.14)",
-                        background: savingAllowed ? "rgba(22,163,74,0.5)" : "#16a34a",
-                        color: "#000",
-                        fontWeight: 950,
-                        cursor: savingAllowed ? "wait" : "pointer",
-                        opacity: savingAllowed ? 0.85 : 1,
-                      }}
-                    >
-                      {savingAllowed ? "Saving…" : "Save Allowed Videos"}
-                    </button>
                   </div>
-
-                  <div
-                    style={{
-                      marginTop: 10,
-                      display: "grid",
-                      gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
-                      gap: 10,
-                    }}
+                  <button
+                    onClick={saveAllowedVideos}
+                    disabled={savingVideos}
+                    className={`rounded-xl px-4 py-2 font-semibold ${
+                      savingVideos
+                        ? "bg-green-900 text-green-200 cursor-not-allowed"
+                        : "bg-green-600 hover:bg-green-500 text-black"
+                    }`}
                   >
-                    {catalog.length === 0 ? (
-                      <div style={{ opacity: 0.75, fontSize: 13 }}>
-                        No catalog loaded yet (or none in DB).
-                      </div>
-                    ) : (
-                      catalog.map((v) => {
-                        const L = upper(v.label);
-                        const checked = allowedLabels.has(L);
-                        return (
-                          <label
-                            key={v.id || v.label}
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 10,
-                              padding: "10px 10px",
-                              borderRadius: 14,
-                              border: checked
-                                ? "2px solid rgba(0,255,140,0.55)"
-                                : "1px solid rgba(255,255,255,0.10)",
-                              background: checked
-                                ? "rgba(0,255,140,0.10)"
-                                : "rgba(255,255,255,0.04)",
-                              cursor: "pointer",
-                              userSelect: "none",
-                            }}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => toggleAllowed(L)}
-                              style={{ transform: "scale(1.2)" }}
-                            />
-                            <div style={{ fontWeight: 950 }}>{L}</div>
-                            <div style={{ marginLeft: "auto", fontSize: 11, opacity: 0.65 }}>
-                              {v.sort_order ?? ""}
+                    {savingVideos ? "Saving…" : "Save Allowed Videos"}
+                  </button>
+                </div>
+
+                {videosLoading ? (
+                  <div className="opacity-70 mt-3">Loading videos…</div>
+                ) : videos.length === 0 ? (
+                  <div className="opacity-70 mt-3">
+                    No videos found. (Check your Supabase table name/columns.)
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
+                    {videos.map((v, idx) => {
+                      const label = v.label;
+                      const checked = allowed.has(label);
+                      return (
+                        <button
+                          key={v.id || label}
+                          onClick={() => toggleAllowed(label)}
+                          className={`rounded-xl border px-3 py-3 text-left transition ${
+                            checked
+                              ? "border-green-500 bg-green-700/25"
+                              : "border-white/10 bg-black/25 hover:border-white/20"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                readOnly
+                                className="h-4 w-4"
+                              />
+                              <span className="font-semibold">{label}</span>
                             </div>
-                          </label>
-                        );
-                      })
-                    )}
+                            <span className="text-xs opacity-60">
+                              {v.sort_order ?? idx + 1}
+                            </span>
+                          </div>
+                          {v.title ? (
+                            <div className="text-xs opacity-70 mt-1">{v.title}</div>
+                          ) : null}
+                        </button>
+                      );
+                    })}
                   </div>
-                </div>
-
-                <div style={{ opacity: 0.7, fontSize: 12, lineHeight: 1.35 }}>
-                  Tip: Bookmark this page on your laptop.
-                  <br />
-                  Admin URL: <span style={{ fontFamily: "monospace" }}>/admin</span>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Add Licensee Modal (simple inline) */}
-        {showAdd ? (
-          <div
-            onClick={() => setShowAdd(false)}
-            style={{
-              position: "fixed",
-              inset: 0,
-              background: "rgba(0,0,0,0.65)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: 14,
-              zIndex: 50,
-            }}
-          >
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                width: "min(560px, 96vw)",
-                borderRadius: 18,
-                border: "1px solid rgba(255,255,255,0.12)",
-                background: "#0b0b0b",
-                padding: 14,
-              }}
-            >
-              <div style={{ fontWeight: 950, fontSize: 18 }}>Add New Licensee</div>
-              <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>
-                Example: Atlanta Franchise / ATLANTA / active
-              </div>
-
-              <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
-                <input
-                  value={addName}
-                  onChange={(e) => setAddName(e.target.value)}
-                  placeholder="Name (ex: Atlanta Franchise)"
-                  style={{
-                    padding: "10px 12px",
-                    borderRadius: 12,
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    background: "rgba(255,255,255,0.06)",
-                    color: "#fff",
-                    outline: "none",
-                  }}
-                />
-
-                <input
-                  value={addCode}
-                  onChange={(e) => setAddCode(e.target.value)}
-                  placeholder="Code (ex: ATLANTA)"
-                  style={{
-                    padding: "10px 12px",
-                    borderRadius: 12,
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    background: "rgba(255,255,255,0.06)",
-                    color: "#fff",
-                    outline: "none",
-                  }}
-                />
-
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                  <div style={{ fontWeight: 900 }}>Status:</div>
-                  <button
-                    onClick={() => setAddStatus("active")}
-                    style={{
-                      padding: "8px 12px",
-                      borderRadius: 12,
-                      border: "1px solid rgba(255,255,255,0.14)",
-                      background: addStatus === "active" ? "#16a34a" : "#374151",
-                      color: addStatus === "active" ? "#000" : "#fff",
-                      fontWeight: 950,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Active
-                  </button>
-                  <button
-                    onClick={() => setAddStatus("disabled")}
-                    style={{
-                      padding: "8px 12px",
-                      borderRadius: 12,
-                      border: "1px solid rgba(255,255,255,0.14)",
-                      background: addStatus === "disabled" ? "rgba(239,68,68,0.9)" : "#374151",
-                      color: addStatus === "disabled" ? "#000" : "#fff",
-                      fontWeight: 950,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Disabled
-                  </button>
-                </div>
-
-                <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
-                  <button
-                    onClick={() => setShowAdd(false)}
-                    style={{
-                      padding: "10px 14px",
-                      borderRadius: 12,
-                      border: "1px solid rgba(255,255,255,0.14)",
-                      background: "#374151",
-                      color: "#fff",
-                      fontWeight: 900,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={addLicensee}
-                    style={{
-                      padding: "10px 14px",
-                      borderRadius: 12,
-                      border: "1px solid rgba(255,255,255,0.14)",
-                      background: "#16a34a",
-                      color: "#000",
-                      fontWeight: 950,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Create Licensee
-                  </button>
-                </div>
+                )}
               </div>
             </div>
-          </div>
-        ) : null}
+          )}
+        </div>
       </div>
     </div>
   );
