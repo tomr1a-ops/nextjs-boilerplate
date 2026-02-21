@@ -21,7 +21,7 @@ function getAdminSupabase() {
   });
 }
 
-// List staff/admin users
+// List staff/admin users (from admin_users table)
 export async function GET(req: NextRequest) {
   try {
     await requireAdminRole(req, ["super_admin", "admin"]);
@@ -42,13 +42,13 @@ export async function GET(req: NextRequest) {
     if (error) return jsonError(error.message, 500);
     return NextResponse.json({ users: data ?? [] });
   } catch (e: any) {
-    // requireAdminRole may throw a Response/NextResponse
+    // requireAdminRole may throw a Response
     if (e instanceof Response) return e as any;
     return jsonError(e?.message || "Server error", 500);
   }
 }
 
-// Invite a new staff user
+// Create a new staff/admin user with a password (NO invite email)
 export async function POST(req: NextRequest) {
   try {
     await requireAdminRole(req, ["super_admin"]);
@@ -63,36 +63,31 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json().catch(() => ({}));
     const email = String(body.email || "").trim().toLowerCase();
+    const password = String(body.password || "");
     const role = String(body.role || "staff").trim();
     const active = body.active !== false;
 
     if (!email) return jsonError("Missing email", 400);
+    if (!password || password.length < 8)
+      return jsonError("Password must be at least 8 characters", 400);
 
-    const allowedRoles = ["super_admin", "admin", "staff"] as const;
-    if (!allowedRoles.includes(role as any)) {
+    if (!["super_admin", "admin", "staff"].includes(role)) {
       return jsonError("Invalid role", 400);
     }
 
-    const siteUrl =
-      process.env.NEXT_PUBLIC_SITE_URL ||
-      "https://ima-studio-player-git-main-tom-richardsons-projects.vercel.app";
-
-    // ✅ Critical fix:
-    // Send invite email to a route that exchanges ?code= for a cookie session
-    // then redirects to the set-password screen.
-    const invite = await supabase.auth.admin.inviteUserByEmail(email, {
-      redirectTo: `${siteUrl}/auth/callback?next=/set-password`,
+    // 1) Create Supabase Auth user with a password (no email invite)
+    const created = await supabase.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true, // mark as confirmed so they can log in immediately
     });
 
-    if (invite.error) {
-      // Supabase often returns 400 for existing users, etc.
-      return jsonError(invite.error.message, 400);
-    }
+    if (created.error) return jsonError(created.error.message, 500);
 
-    const userId = invite.data?.user?.id;
-    if (!userId) return jsonError("Invite did not return a user id", 500);
+    const userId = created.data?.user?.id;
+    if (!userId) return jsonError("Create user did not return a user id", 500);
 
-    // Upsert staff record
+    // 2) Insert/upsert into admin_users
     const { error: upsertErr } = await supabase
       .from("admin_users")
       .upsert({ user_id: userId, email, role, active }, { onConflict: "user_id" });
@@ -101,11 +96,48 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      invited: email,
+      created: email,
       user_id: userId,
       role,
       active,
     });
+  } catch (e: any) {
+    if (e instanceof Response) return e as any;
+    return jsonError(e?.message || "Server error", 500);
+  }
+}
+
+// Delete staff/admin user (removes from Supabase Auth + admin_users)
+export async function DELETE(req: NextRequest) {
+  try {
+    await requireAdminRole(req, ["super_admin"]);
+
+    const supabase = getAdminSupabase();
+    if (!supabase) {
+      return jsonError(
+        "Missing SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) or SUPABASE_SERVICE_ROLE_KEY",
+        500
+      );
+    }
+
+    const body = await req.json().catch(() => ({}));
+    const userId = String(body.user_id || "").trim();
+
+    if (!userId) return jsonError("Missing user_id", 400);
+
+    // Delete row in admin_users first (optional, either order is fine)
+    const { error: delRowErr } = await supabase
+      .from("admin_users")
+      .delete()
+      .eq("user_id", userId);
+
+    if (delRowErr) return jsonError(delRowErr.message, 500);
+
+    // Delete auth user
+    const del = await supabase.auth.admin.deleteUser(userId);
+    if (del.error) return jsonError(del.error.message, 500);
+
+    return NextResponse.json({ ok: true, deleted_user_id: userId });
   } catch (e: any) {
     if (e instanceof Response) return e as any;
     return jsonError(e?.message || "Server error", 500);
