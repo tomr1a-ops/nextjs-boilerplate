@@ -6,7 +6,8 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 async function requireAdmin() {
-  const supabase = await supabaseServer();
+  // ✅ DO NOT await this
+  const supabase = supabaseServer();
 
   const { data: userData, error: userErr } = await supabase.auth.getUser();
   const user = userData?.user;
@@ -21,8 +22,8 @@ async function requireAdmin() {
     .eq("user_id", user.id)
     .maybeSingle();
 
+  // If this throws, it's almost always RLS blocking admin_users select
   if (roleErr) {
-    // If this happens, your RLS is blocking admin_users lookup
     redirect("/login?next=/admin");
   }
 
@@ -42,9 +43,7 @@ export default async function AdminPage() {
   return (
     <div style={{ minHeight: "100vh", background: "#0b0b0b", color: "#fff", padding: 24 }}>
       <div style={{ maxWidth: 980, margin: "0 auto" }}>
-        <h1 style={{ margin: 0, fontSize: 28, fontWeight: 900 }}>
-          IMAOS Admin
-        </h1>
+        <h1 style={{ margin: 0, fontSize: 28, fontWeight: 900 }}>IMAOS Admin</h1>
 
         <div style={{ marginTop: 8, opacity: 0.9 }}>
           Logged in as <b>{email || "unknown"}</b> — role <b>{role}</b>
@@ -90,7 +89,8 @@ export default async function AdminPage() {
         <div style={{ marginTop: 22, padding: 14, border: "1px solid #333", borderRadius: 12 }}>
           <div style={{ fontWeight: 800, marginBottom: 6 }}>If this page loads, auth is working.</div>
           <div style={{ opacity: 0.9 }}>
-            If you still get redirected to login after logging in, then cookies still are not being set by the login flow.
+            If you get redirected after login, either cookies aren’t being written by the server client, or RLS is blocking
+            your admin_users lookup.
           </div>
         </div>
       </div>
