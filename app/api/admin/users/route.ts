@@ -37,14 +37,15 @@ export async function GET(req: NextRequest) {
 
     const { data, error } = await supabase
       .from("admin_users")
-      .select("id,user_id,email,role,active,created_at")
+      // ✅ your table does NOT have `id`
+      .select("user_id,email,role,active,created_at")
       .order("created_at", { ascending: false });
 
     if (error) return jsonError(error.message, 500);
     return NextResponse.json({ users: data ?? [] });
   } catch (e: any) {
-    // your requireAdminRole throws NextResponse.json(...) — return it cleanly
-    if (e instanceof NextResponse) return e;
+    // If requireAdminRole throws a NextResponse, return it
+    if (e && typeof e === "object" && "headers" in e && "status" in e) return e;
     return jsonError(e?.message || "Server error", 500);
   }
 }
@@ -73,10 +74,15 @@ export async function POST(req: NextRequest) {
       return jsonError("Invalid role", 400);
     }
 
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "";
+    if (!siteUrl) {
+      return jsonError("Missing NEXT_PUBLIC_SITE_URL env var", 500);
+    }
+
     // 1) Invite user by email (Supabase sends email)
     const invite = await supabase.auth.admin.inviteUserByEmail(email, {
-      // IMPORTANT: set this to your login or onboarding page
-      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || ""}/login`,
+      // Send them back to your login and then into admin
+      redirectTo: `${siteUrl}/login?next=/admin`,
     });
 
     if (invite.error) return jsonError(invite.error.message, 500);
@@ -86,10 +92,7 @@ export async function POST(req: NextRequest) {
     // 2) Upsert into admin_users table
     const { error: upsertErr } = await supabase
       .from("admin_users")
-      .upsert(
-        { user_id: userId, email, role, active },
-        { onConflict: "user_id" }
-      );
+      .upsert({ user_id: userId, email, role, active }, { onConflict: "user_id" });
 
     if (upsertErr) return jsonError(upsertErr.message, 500);
 
@@ -101,7 +104,7 @@ export async function POST(req: NextRequest) {
       active,
     });
   } catch (e: any) {
-    if (e instanceof NextResponse) return e;
+    if (e && typeof e === "object" && "headers" in e && "status" in e) return e;
     return jsonError(e?.message || "Server error", 500);
   }
 }
