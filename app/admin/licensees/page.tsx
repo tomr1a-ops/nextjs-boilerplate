@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { supabaseServerAnon } from "@/lib/supabase/server";
 
 async function requireAdminPage() {
-  const supabase = await supabaseServerAnon();
+const supabase = supabaseServer();
   const { data } = await supabase.auth.getUser();
   const user = data?.user;
   if (!user) redirect("/login");
