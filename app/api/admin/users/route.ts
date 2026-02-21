@@ -21,11 +21,33 @@ function getAdminSupabase() {
   });
 }
 
-// List staff/admin users (simple list)
+async function guard(req: NextRequest, roles: string[]) {
+  // IMPORTANT:
+  // requireAdminRole in this repo may either:
+  //  - return a Response (unauthorized) OR
+  //  - throw a Response OR
+  //  - return void (authorized)
+  const result: any = await requireAdminRole(req as any, roles).catch((e: any) => e);
+
+  // If it threw/returned a Response, normalize to JSON so the UI can parse it.
+  if (result instanceof Response) {
+    // try to read error body if any, else return a clean JSON error
+    return jsonError("Unauthorized", 401);
+  }
+
+  // If it returned something that looks like a Response
+  if (result && typeof result === "object" && "status" in result && "headers" in result) {
+    return jsonError("Unauthorized", 401);
+  }
+
+  return null;
+}
+
+// List staff/admin users
 export async function GET(req: NextRequest) {
   try {
-    // Only logged-in admins can view
-    await requireAdminRole(req, ["super_admin", "admin"]);
+    const denied = await guard(req, ["super_admin", "admin"]);
+    if (denied) return denied;
 
     const supabase = getAdminSupabase();
     if (!supabase) {
@@ -35,26 +57,25 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    // NOTE: your table does NOT have admin_users.id, so do NOT select it.
     const { data, error } = await supabase
       .from("admin_users")
-      // ✅ your table does NOT have `id`
       .select("user_id,email,role,active,created_at")
       .order("created_at", { ascending: false });
 
     if (error) return jsonError(error.message, 500);
+
     return NextResponse.json({ users: data ?? [] });
   } catch (e: any) {
-    // If requireAdminRole throws a NextResponse, return it
-    if (e && typeof e === "object" && "headers" in e && "status" in e) return e;
     return jsonError(e?.message || "Server error", 500);
   }
 }
 
-// Create/invite a new staff user
+// Invite a new staff user
 export async function POST(req: NextRequest) {
   try {
-    // Only super_admin should add staff
-    await requireAdminRole(req, ["super_admin"]);
+    const denied = await guard(req, ["super_admin"]);
+    if (denied) return denied;
 
     const supabase = getAdminSupabase();
     if (!supabase) {
@@ -74,22 +95,22 @@ export async function POST(req: NextRequest) {
       return jsonError("Invalid role", 400);
     }
 
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "";
-    if (!siteUrl) {
-      return jsonError("Missing NEXT_PUBLIC_SITE_URL env var", 500);
-    }
+    const site =
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      process.env.NEXT_PUBLIC_VERCEL_URL ||
+      "";
 
-    // 1) Invite user by email (Supabase sends email)
+    // Invite user by email (Supabase sends email)
     const invite = await supabase.auth.admin.inviteUserByEmail(email, {
-      // Send them back to your login and then into admin
-      redirectTo: `${siteUrl}/login?next=/admin`,
+      redirectTo: site ? `${site.replace(/\/$/, "")}/login` : undefined,
     });
 
     if (invite.error) return jsonError(invite.error.message, 500);
+
     const userId = invite.data?.user?.id;
     if (!userId) return jsonError("Invite did not return a user id", 500);
 
-    // 2) Upsert into admin_users table
+    // Upsert into admin_users
     const { error: upsertErr } = await supabase
       .from("admin_users")
       .upsert({ user_id: userId, email, role, active }, { onConflict: "user_id" });
@@ -104,7 +125,6 @@ export async function POST(req: NextRequest) {
       active,
     });
   } catch (e: any) {
-    if (e && typeof e === "object" && "headers" in e && "status" in e) return e;
     return jsonError(e?.message || "Server error", 500);
   }
 }
