@@ -1,16 +1,31 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
+import { createServerClient } from "@supabase/ssr";
 
-/**
- * Minimal middleware.
- * - No more ADMIN_API_KEY / x-admin-key gating.
- * - Let server routes handle auth (or the /admin layout gate).
- */
-export function middleware(_req: NextRequest) {
-  return NextResponse.next();
+export async function middleware(req: NextRequest) {
+  let res = NextResponse.next();
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      getAll() {
+        return req.cookies.getAll();
+      },
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value, options }) => {
+          res.cookies.set(name, value, options);
+        });
+      },
+    },
+  });
+
+  // IMPORTANT: forces refresh + cookie set when needed
+  await supabase.auth.getUser();
+
+  return res;
 }
 
-// Run middleware on everything EXCEPT Next internals/static.
-// (You can also remove this config entirely; it's fine either way.)
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/admin/:path*", "/api/admin/:path*"],
 };
