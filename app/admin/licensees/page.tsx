@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
 
 async function requireAdminPage() {
-  const supabase = supabaseServer();
+  const supabase = await supabaseServer();
 
   const { data } = await supabase.auth.getUser();
   const user = data?.user;
@@ -30,22 +30,12 @@ export default async function LicenseesAdminPage() {
   await requireAdminPage();
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "#0b0b0b",
-        color: "#fff",
-        padding: 16,
-      }}
-    >
+    <div style={{ minHeight: "100vh", background: "#0b0b0b", color: "#fff", padding: 16 }}>
       <div style={{ maxWidth: 980, margin: "0 auto" }}>
-        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900 }}>
-          IMAOS Command Center
-        </h1>
+        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900 }}>IMAOS Command Center</h1>
         <div style={{ marginTop: 6, opacity: 0.75 }}>Licensees</div>
 
         <div style={{ marginTop: 14 }}>
-          {/* Client UI Mount Point */}
           <div id="admin-licensees-root" />
         </div>
       </div>
