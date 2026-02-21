@@ -42,6 +42,7 @@ export async function GET(req: NextRequest) {
     if (error) return jsonError(error.message, 500);
     return NextResponse.json({ users: data ?? [] });
   } catch (e: any) {
+    // requireAdminRole may throw a Response/NextResponse
     if (e instanceof Response) return e as any;
     return jsonError(e?.message || "Server error", 500);
   }
@@ -66,7 +67,9 @@ export async function POST(req: NextRequest) {
     const active = body.active !== false;
 
     if (!email) return jsonError("Missing email", 400);
-    if (!["super_admin", "admin", "staff"].includes(role)) {
+
+    const allowedRoles = ["super_admin", "admin", "staff"] as const;
+    if (!allowedRoles.includes(role as any)) {
       return jsonError("Invalid role", 400);
     }
 
@@ -74,13 +77,17 @@ export async function POST(req: NextRequest) {
       process.env.NEXT_PUBLIC_SITE_URL ||
       "https://ima-studio-player-git-main-tom-richardsons-projects.vercel.app";
 
-    // Send invite email
+    // ✅ Critical fix:
+    // Send invite email to a route that exchanges ?code= for a cookie session
+    // then redirects to the set-password screen.
     const invite = await supabase.auth.admin.inviteUserByEmail(email, {
-      // This is the critical fix:
-      redirectTo: `${siteUrl}/auth/confirm?next=/admin/users`,
+      redirectTo: `${siteUrl}/auth/callback?next=/set-password`,
     });
 
-    if (invite.error) return jsonError(invite.error.message, 500);
+    if (invite.error) {
+      // Supabase often returns 400 for existing users, etc.
+      return jsonError(invite.error.message, 400);
+    }
 
     const userId = invite.data?.user?.id;
     if (!userId) return jsonError("Invite did not return a user id", 500);
