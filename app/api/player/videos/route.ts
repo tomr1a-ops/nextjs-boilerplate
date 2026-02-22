@@ -15,28 +15,29 @@ export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
     const code = (url.searchParams.get("code") || "").trim().toUpperCase();
-
     if (!code) return json(400, { error: "Missing code" });
 
-    const SUPABASE_URL = process.env.SUPABASE_URL!;
-    const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!SUPABASE_URL || !SERVICE_ROLE) return json(500, { error: "Server env missing" });
 
-    const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, {
-      auth: { persistSession: false },
-    });
+    const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
 
-    // 1) Find licensee by code
+    // 1) Find licensee by code (and active)
     const { data: lic, error: licErr } = await supabase
       .from("licensees")
-      .select("id, name, code")
+      .select("id, name, code, active")
       .eq("code", code)
       .maybeSingle();
 
     if (licErr) return json(500, { error: licErr.message });
     if (!lic) return json(404, { error: "Invalid code" });
 
-    // 2) Get allowed labels for this licensee
+    if (lic.active === false) {
+      return json(403, { error: "License inactive" });
+    }
+
+    // 2) Allowed labels
     const { data: accessRows, error: accessErr } = await supabase
       .from("licensee_video_access")
       .select("video_label")
@@ -48,11 +49,9 @@ export async function GET(req: Request) {
       .map((r: any) => String(r.video_label || "").trim().toUpperCase())
       .filter(Boolean);
 
-    if (labels.length === 0) {
-      return json(200, { licensee: lic, videos: [] });
-    }
+    if (labels.length === 0) return json(200, { licensee: lic, videos: [] });
 
-    // 3) Fetch videos that match those labels
+    // 3) Fetch videos matching allowed labels
     const { data: vids, error: vidsErr } = await supabase
       .from("videos")
       .select("id, label, playback_id, sort_order, active, created_at")
@@ -62,7 +61,6 @@ export async function GET(req: Request) {
 
     if (vidsErr) return json(500, { error: vidsErr.message });
 
-    // Keep only allowed labels (and preserve label filtering)
     const allowedSet = new Set(labels);
     const filtered = (vids || []).filter((v: any) => allowedSet.has(String(v.label || "").toUpperCase()));
 
