@@ -13,6 +13,7 @@ function getAdminSupabase() {
   const supabaseUrl =
     process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
   if (!supabaseUrl || !serviceKey) return null;
 
   return createClient(supabaseUrl, serviceKey, {
@@ -21,12 +22,14 @@ function getAdminSupabase() {
 }
 
 /**
- * GET /api/admin/licensee-videos?licensee_id=UUID
- * returns: { video_ids: string[] }
+ * GET /api/admin/licensees/videos?licensee_id=...
+ * Returns:
+ *  - all videos
+ *  - assigned video_ids for that licensee
  */
 export async function GET(req: NextRequest) {
   try {
-    await requireAdminRole(req, ["super_admin", "admin", "staff"]);
+    await requireAdminRole(req, ["super_admin", "admin"]);
 
     const supabase = getAdminSupabase();
     if (!supabase) {
@@ -37,19 +40,31 @@ export async function GET(req: NextRequest) {
     }
 
     const { searchParams } = new URL(req.url);
-    const licensee_id = String(searchParams.get("licensee_id") || "").trim();
+    const licenseeId = String(searchParams.get("licensee_id") || "").trim();
+    if (!licenseeId) return jsonError("Missing licensee_id", 400);
 
-    if (!licensee_id) return jsonError("Missing licensee_id", 400);
+    const [videosRes, assignedRes] = await Promise.all([
+      supabase
+        .from("videos")
+        .select("id,title,slug,mux_playback_id,active,created_at")
+        .order("created_at", { ascending: false }),
 
-    const { data, error } = await supabase
-      .from("licensee_videos")
-      .select("video_id")
-      .eq("licensee_id", licensee_id);
+      supabase
+        .from("licensee_videos")
+        .select("video_id,allowed")
+        .eq("licensee_id", licenseeId)
+        .eq("allowed", true),
+    ]);
 
-    if (error) return jsonError(error.message, 500);
+    if (videosRes.error) return jsonError(videosRes.error.message, 500);
+    if (assignedRes.error) return jsonError(assignedRes.error.message, 500);
 
-    const video_ids = (data ?? []).map((r: any) => r.video_id).filter(Boolean);
-    return NextResponse.json({ video_ids });
+    const assignedIds = (assignedRes.data || []).map((r: any) => r.video_id);
+
+    return NextResponse.json({
+      videos: videosRes.data ?? [],
+      assigned_video_ids: assignedIds,
+    });
   } catch (e: any) {
     if (e instanceof Response) return e as any;
     return jsonError(e?.message || "Server error", 500);
@@ -57,11 +72,11 @@ export async function GET(req: NextRequest) {
 }
 
 /**
- * PUT /api/admin/licensee-videos
- * body: { licensee_id: string, video_ids: string[] }
- * Behavior: replaces existing assignments with provided list
+ * POST /api/admin/licensees/videos
+ * Body: { licensee_id: string, video_ids: string[] }
+ * Behavior: replaces assignments (simple + predictable)
  */
-export async function PUT(req: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
     await requireAdminRole(req, ["super_admin", "admin"]);
 
@@ -74,31 +89,32 @@ export async function PUT(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const licensee_id = String(body.licensee_id || "").trim();
-    const video_ids = Array.isArray(body.video_ids) ? body.video_ids : [];
+    const licenseeId = String(body.licensee_id || "").trim();
+    const videoIds = Array.isArray(body.video_ids) ? body.video_ids : [];
 
-    if (!licensee_id) return jsonError("Missing licensee_id", 400);
+    if (!licenseeId) return jsonError("Missing licensee_id", 400);
 
-    // 1) delete current rows
+    // 1) delete existing
     const del = await supabase
       .from("licensee_videos")
       .delete()
-      .eq("licensee_id", licensee_id);
+      .eq("licensee_id", licenseeId);
 
     if (del.error) return jsonError(del.error.message, 500);
 
-    // 2) insert new rows
-    const rows = video_ids
-      .map((id: any) => String(id || "").trim())
-      .filter(Boolean)
-      .map((video_id: string) => ({ licensee_id, video_id }));
+    // 2) insert new
+    if (videoIds.length > 0) {
+      const rows = videoIds.map((video_id: string) => ({
+        licensee_id: licenseeId,
+        video_id,
+        allowed: true,
+      }));
 
-    if (rows.length > 0) {
       const ins = await supabase.from("licensee_videos").insert(rows);
       if (ins.error) return jsonError(ins.error.message, 500);
     }
 
-    return NextResponse.json({ ok: true, licensee_id, count: rows.length });
+    return NextResponse.json({ ok: true, licensee_id: licenseeId, count: videoIds.length });
   } catch (e: any) {
     if (e instanceof Response) return e as any;
     return jsonError(e?.message || "Server error", 500);
