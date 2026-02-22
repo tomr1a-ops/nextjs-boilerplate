@@ -7,25 +7,14 @@ type PlayerVideo = {
   id: string;
   label: string;
   playback_id: string;
-  sort_order?: number | null;
-  active?: boolean | null;
 };
 
 function getBaseUrl() {
   const h = headers();
-  const proto = h.get("x-forwarded-proto") || "https";
-  const host = h.get("x-forwarded-host") || h.get("host");
+  const host = h.get("x-forwarded-host") ?? h.get("host");
+  const proto = h.get("x-forwarded-proto") ?? "https";
+  if (!host) return "";
   return `${proto}://${host}`;
-}
-
-async function getJson(url: string) {
-  const res = await fetch(url, { cache: "no-store" });
-  const text = await res.text();
-  let json: any = null;
-  try {
-    json = text ? JSON.parse(text) : null;
-  } catch {}
-  return { ok: res.ok, status: res.status, json, text };
 }
 
 export default async function PlayerPage({
@@ -33,137 +22,54 @@ export default async function PlayerPage({
 }: {
   params: { roomId: string };
 }) {
-  const code = (params?.roomId || "").trim().toUpperCase();
-  const baseUrl = getBaseUrl();
+  const code = (params.roomId || "").trim().toUpperCase();
 
-  let videos: PlayerVideo[] = [];
-  let err = "";
+  const base = getBaseUrl();
+  const res = await fetch(
+    `${base}/api/player/videos?code=${encodeURIComponent(code)}`,
+    { cache: "no-store" }
+  );
 
-  if (code) {
-    const out = await getJson(
-      `${baseUrl}/api/player/videos?code=${encodeURIComponent(code)}`
-    );
+  const json = await res.json().catch(() => null);
 
-    if (!out.ok) {
-      err = out.json?.error || out.text || `Request failed (${out.status})`;
-    } else {
-      videos = Array.isArray(out.json?.videos) ? out.json.videos : [];
-    }
-  }
-
-  return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "#0b0b0b",
-        color: "#fff",
-        padding: 16,
-      }}
-    >
-      <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-        <h1 style={{ margin: 0, fontSize: 28, fontWeight: 900 }}>
-          IMAOS Player
-        </h1>
-
-        <div style={{ opacity: 0.8, marginTop: 6 }}>
-          Code:{" "}
-          <span
-            style={{
-              fontFamily:
-                "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-              fontWeight: 900,
-            }}
-          >
-            {code || "(missing)"}
-          </span>
-        </div>
-
-        {/* helpful debug line */}
-        <div style={{ opacity: 0.55, marginTop: 6, fontSize: 12 }}>
-          API: {baseUrl}/api/player/videos?code={encodeURIComponent(code)}
-        </div>
-
-        {err ? (
-          <div
-            style={{
-              marginTop: 12,
-              padding: 12,
-              borderRadius: 12,
-              border: "1px solid #7f1d1d",
-              background: "#2a0f10",
-              color: "#fecaca",
-              fontWeight: 700,
-            }}
-          >
-            {err}
-          </div>
-        ) : null}
-
-        <div style={{ marginTop: 14 }}>
-          {code && videos.length === 0 && !err ? (
-            <div style={{ opacity: 0.8 }}>No videos assigned to this licensee.</div>
-          ) : null}
-
-          {videos.length > 0 ? (
-            <div
-              style={{
-                display: "grid",
-                gap: 12,
-                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                marginTop: 12,
-              }}
-            >
-              {videos.map((v) => (
-                <div
-                  key={v.id}
-                  style={{
-                    border: "1px solid #222",
-                    borderRadius: 14,
-                    background: "#0f0f0f",
-                    padding: 12,
-                  }}
-                >
-                  <div style={{ fontWeight: 900, fontSize: 18 }}>
-                    {v.label}
-                    {v.active === false ? (
-                      <span style={{ marginLeft: 8, opacity: 0.7 }}>
-                        (inactive)
-                      </span>
-                    ) : null}
-                  </div>
-
-                  <div style={{ opacity: 0.75, marginTop: 6, fontSize: 13 }}>
-                    playback_id:{" "}
-                    <span
-                      style={{
-                        fontFamily:
-                          "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-                      }}
-                    >
-                      {v.playback_id}
-                    </span>
-                  </div>
-
-                  <div style={{ marginTop: 10 }}>
-                    <video
-                      controls
-                      playsInline
-                      style={{
-                        width: "100%",
-                        borderRadius: 12,
-                        background: "#000",
-                      }}
-                      src={`https://stream.mux.com/${encodeURIComponent(
-                        v.playback_id
-                      )}.m3u8`}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : null}
+  if (!res.ok) {
+    return (
+      <div style={{ padding: 40, background: "#000", color: "#fff" }}>
+        <h1>IMAOS Player</h1>
+        <div style={{ marginTop: 20, color: "#f87171", fontWeight: 700 }}>
+          {json?.error || "License inactive or invalid."}
         </div>
       </div>
+    );
+  }
+
+  const videos: PlayerVideo[] = Array.isArray(json?.videos)
+    ? json.videos
+    : [];
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#000", color: "#fff", padding: 20 }}>
+      <h1 style={{ fontWeight: 900 }}>IMAOS Player — {code}</h1>
+
+      {videos.length === 0 ? (
+        <div style={{ marginTop: 20 }}>
+          No videos assigned.
+        </div>
+      ) : (
+        <div style={{ marginTop: 20, display: "grid", gap: 20 }}>
+          {videos.map((v) => (
+            <div key={v.id}>
+              <div style={{ fontWeight: 900 }}>{v.label}</div>
+              <video
+                controls
+                playsInline
+                style={{ width: "100%", marginTop: 10 }}
+                src={`https://stream.mux.com/${v.playback_id}.m3u8`}
+              />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
