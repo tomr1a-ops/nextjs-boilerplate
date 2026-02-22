@@ -13,7 +13,7 @@ type Licensee = {
 type Video = {
   id: string;
   title?: string | null;
-  slug?: string | null;
+  slug?: string | null; // IMPORTANT: used as the "label" (e.g. AL1V1)
   mux_playback_id?: string | null;
   active?: boolean | null;
   created_at?: string | null;
@@ -40,11 +40,15 @@ export default function LicenseesClient() {
   // video assignment modal state
   const [showVideosFor, setShowVideosFor] = useState<Licensee | null>(null);
   const [allVideos, setAllVideos] = useState<Video[]>([]);
+  // checked is keyed by VIDEO LABEL (slug uppercased), not video id
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [savingVideos, setSavingVideos] = useState(false);
   const [videosErr, setVideosErr] = useState("");
 
-  const canCreate = useMemo(() => name.trim().length > 0 && code.trim().length > 0, [name, code]);
+  const canCreate = useMemo(
+    () => name.trim().length > 0 && code.trim().length > 0,
+    [name, code]
+  );
 
   async function refresh() {
     setErr("");
@@ -132,32 +136,58 @@ export default function LicenseesClient() {
     setChecked({});
 
     try {
-      const res = await fetch(
-        `/api/admin/licensees/videos?licensee_id=${encodeURIComponent(licensee.id)}`,
-        { cache: "no-store" }
-      );
-      const out = await safeJson(res);
+      // 1) Load all videos
+      const resVideos = await fetch(`/api/admin/videos`, { cache: "no-store" });
+      const outVideos = await safeJson(resVideos);
 
-      if (!out.ok) {
-        setVideosErr(out.json?.error || out.text || `Load failed (${out.status})`);
+      if (!outVideos.ok) {
+        setVideosErr(outVideos.json?.error || outVideos.text || `Videos load failed (${outVideos.status})`);
         return;
       }
 
-      const vids: Video[] = Array.isArray(out.json?.videos) ? out.json.videos : [];
-      const assigned: string[] = Array.isArray(out.json?.assigned_video_ids) ? out.json.assigned_video_ids : [];
+      const vids: Video[] = Array.isArray(outVideos.json?.videos)
+        ? outVideos.json.videos
+        : Array.isArray(outVideos.json?.data)
+        ? outVideos.json.data
+        : [];
 
       setAllVideos(vids);
 
+      // 2) Load assigned labels for this licensee
+      const resAssigned = await fetch(
+        `/api/admin/licensees/${encodeURIComponent(licensee.id)}/videos`,
+        { cache: "no-store" }
+      );
+      const outAssigned = await safeJson(resAssigned);
+
+      if (!outAssigned.ok) {
+        setVideosErr(outAssigned.json?.error || outAssigned.text || `Assigned load failed (${outAssigned.status})`);
+        return;
+      }
+
+      const assignedLabels: string[] = Array.isArray(outAssigned.json?.video_labels)
+        ? outAssigned.json.video_labels
+        : [];
+
+      const assignedSet = new Set(assignedLabels.map((x) => String(x).toUpperCase()));
+
+      // 3) Build checkbox map keyed by slug (label)
       const map: Record<string, boolean> = {};
-      for (const v of vids) map[v.id] = assigned.includes(v.id);
+      for (const v of vids) {
+        const label = (v.slug || "").toString().toUpperCase();
+        if (!label) continue;
+        map[label] = assignedSet.has(label);
+      }
       setChecked(map);
     } catch (e: any) {
       setVideosErr(e?.message || "Failed to load videos");
     }
   }
 
-  function toggleVideo(id: string) {
-    setChecked((prev) => ({ ...prev, [id]: !prev[id] }));
+  function toggleVideo(label: string) {
+    const key = String(label || "").toUpperCase();
+    if (!key) return;
+    setChecked((prev) => ({ ...prev, [key]: !prev[key] }));
   }
 
   async function saveVideos() {
@@ -166,18 +196,19 @@ export default function LicenseesClient() {
     setSavingVideos(true);
 
     try {
-      const selected = Object.entries(checked)
+      const selectedLabels = Object.entries(checked)
         .filter(([, v]) => v)
-        .map(([k]) => k);
+        .map(([k]) => String(k).toUpperCase());
 
-      const res = await fetch("/api/admin/licensees/videos", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          licensee_id: showVideosFor.id,
-          video_ids: selected,
-        }),
-      });
+      // Replace all labels for this licensee
+      const res = await fetch(
+        `/api/admin/licensees/${encodeURIComponent(showVideosFor.id)}/videos`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ video_labels: selectedLabels }),
+        }
+      );
 
       const out = await safeJson(res);
 
@@ -459,41 +490,48 @@ export default function LicenseesClient() {
 
             <div style={{ marginTop: 14, borderTop: "1px solid #222", paddingTop: 12 }}>
               {allVideos.length === 0 ? (
-                <div style={{ opacity: 0.8 }}>No videos found. Add videos first in your Videos admin.</div>
+                <div style={{ opacity: 0.8 }}>
+                  No videos found. Add videos first in your Videos admin (and confirm /api/admin/videos returns data).
+                </div>
               ) : (
                 <div style={{ display: "grid", gap: 10 }}>
-                  {allVideos.map((v) => (
-                    <label
-                      key={v.id}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 10,
-                        padding: 12,
-                        border: "1px solid #222",
-                        borderRadius: 12,
-                        background: "#0f0f0f",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={!!checked[v.id]}
-                        onChange={() => toggleVideo(v.id)}
-                        disabled={savingVideos}
-                        style={{ width: 18, height: 18 }}
-                      />
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 900 }}>
-                          {v.title || v.slug || v.id}
-                          {v.active === false ? <span style={{ marginLeft: 8, opacity: 0.7 }}>(inactive)</span> : null}
+                  {allVideos.map((v) => {
+                    const label = (v.slug || "").toUpperCase();
+                    if (!label) return null;
+
+                    return (
+                      <label
+                        key={v.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          padding: 12,
+                          border: "1px solid #222",
+                          borderRadius: 12,
+                          background: "#0f0f0f",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={!!checked[label]}
+                          onChange={() => toggleVideo(label)}
+                          disabled={savingVideos}
+                          style={{ width: 18, height: 18 }}
+                        />
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 900 }}>
+                            {v.title || v.slug || v.id}
+                            {v.active === false ? <span style={{ marginLeft: 8, opacity: 0.7 }}>(inactive)</span> : null}
+                          </div>
+                          <div style={{ opacity: 0.75, marginTop: 2, fontSize: 13 }}>
+                            label: {label} • mux_playback_id: {v.mux_playback_id || "—"}
+                          </div>
                         </div>
-                        <div style={{ opacity: 0.75, marginTop: 2, fontSize: 13 }}>
-                          slug: {v.slug || "—"} • mux_playback_id: {v.mux_playback_id || "—"}
-                        </div>
-                      </div>
-                    </label>
-                  ))}
+                      </label>
+                    );
+                  })}
                 </div>
               )}
             </div>
