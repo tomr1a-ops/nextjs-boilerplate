@@ -503,8 +503,15 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                   No videos found. (Confirm <code>/api/admin/videos</code> returns a list.)
                 </div>
               ) : (
-                <div style={{ display: "grid", gap: 10 }}>
-                  {allVideos.map((v) => {
+                <div
+  style={{
+    display: "grid",
+    gap: 10,
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))", // 3 columns on desktop
+  }}
+>
+  {allVideos.map(...)}
+</div>
                     const label = normLabel(v.label);
                     if (!label) return null;
 
