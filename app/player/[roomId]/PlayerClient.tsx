@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useParams } from "next/navigation";
 
 type PlayerVideo = {
   id: string;
@@ -11,7 +11,7 @@ type PlayerVideo = {
   active?: boolean | null;
 };
 
-function cleanCode(input: any) {
+function clean(input: any) {
   return (input ?? "")
     .toString()
     .trim()
@@ -20,28 +20,21 @@ function cleanCode(input: any) {
 }
 
 export default function PlayerClient() {
-  const router = useRouter();
-  const sp = useSearchParams();
+  const params = useParams() as { roomId?: string } | null;
 
-  const initialCode = useMemo(() => cleanCode(sp.get("code") || ""), [sp]);
+  const code = useMemo(() => clean(params?.roomId), [params?.roomId]);
 
-  const [code, setCode] = useState(initialCode);
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState("");
-  const [inactive, setInactive] = useState(false);
   const [videos, setVideos] = useState<PlayerVideo[]>([]);
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  async function loadVideos(nextCode?: string) {
-    const c = cleanCode(nextCode ?? code);
-    if (!c) return;
-
-    setLoading(true);
+  async function load() {
+    if (!code) return;
     setErr("");
-    setInactive(false);
-    setVideos([]);
+    setLoading(true);
 
     try {
-      const res = await fetch(`/api/player/videos?code=${encodeURIComponent(c)}&t=${Date.now()}`, {
+      const res = await fetch(`/api/player/videos?code=${encodeURIComponent(code)}&t=${Date.now()}`, {
         cache: "no-store",
       });
 
@@ -51,120 +44,59 @@ export default function PlayerClient() {
         json = text ? JSON.parse(text) : null;
       } catch {}
 
-      // 🔒 License inactive (your API returns this)
-      if (res.status === 403) {
-        setInactive(true);
-        setErr(json?.error || "License inactive");
-        return;
-      }
-
       if (!res.ok) {
-        setErr(json?.error || text || `Request failed (${res.status})`);
-        return;
+        throw new Error(json?.error || text || `Request failed (${res.status})`);
       }
 
-      const list = Array.isArray(json?.videos) ? json.videos : [];
-      setVideos(list);
+      setVideos(Array.isArray(json?.videos) ? json.videos : []);
     } catch (e: any) {
       setErr(e?.message || "Failed to load videos");
+      setVideos([]);
     } finally {
       setLoading(false);
     }
   }
 
-  function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const c = cleanCode(code);
-    // update URL so you can bookmark/share
-    router.replace(`/player?code=${encodeURIComponent(c)}`);
-    loadVideos(c);
-  }
-
-  // Auto-load if URL already has ?code=
   useEffect(() => {
-    if (initialCode) {
-      setCode(initialCode);
-      loadVideos(initialCode);
-    }
+    load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialCode]);
+  }, [code]);
 
   return (
     <div style={{ minHeight: "100vh", background: "#0b0b0b", color: "#fff", padding: 16 }}>
       <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-        <h1 style={{ margin: 0, fontSize: 38, fontWeight: 900 }}>IMAOS Player</h1>
-        <div style={{ opacity: 0.8, marginTop: 6 }}>
-          Enter a licensee code (example: <b>AT100</b>)
+        <h1 style={{ margin: 0, fontSize: 34, fontWeight: 900 }}>IMAOS Player</h1>
+
+        <div style={{ opacity: 0.85, marginTop: 8 }}>
+          Code:{" "}
+          <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontWeight: 900 }}>
+            {code || "(missing)"}
+          </span>
         </div>
 
-        <form
-          onSubmit={onSubmit}
-          style={{
-            marginTop: 14,
-            display: "flex",
-            gap: 10,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
-          <input
-            value={code}
-            onChange={(e) => setCode(cleanCode(e.target.value))}
-            placeholder="Licensee code (e.g. AT100)"
-            style={{
-              padding: "14px 16px",
-              borderRadius: 14,
-              border: "1px solid #333",
-              background: "#0f0f0f",
-              color: "#fff",
-              outline: "none",
-              width: 340,
-              fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-              fontWeight: 900,
-              letterSpacing: 1,
-              textTransform: "uppercase",
-              fontSize: 18,
-            }}
-          />
+        <div style={{ marginTop: 14 }}>
           <button
-            type="submit"
-            disabled={!code || loading}
+            onClick={load}
             style={{
-              padding: "14px 18px",
-              borderRadius: 14,
+              padding: "12px 16px",
+              borderRadius: 12,
               border: "1px solid #1f4d2a",
               background: "#22c55e",
               color: "#000",
               fontWeight: 900,
-              cursor: !code || loading ? "not-allowed" : "pointer",
-              opacity: !code || loading ? 0.6 : 1,
-              fontSize: 18,
+              cursor: "pointer",
             }}
           >
-            {loading ? "Loading…" : "Load Videos"}
+            Refresh
           </button>
-        </form>
+        </div>
 
-        {inactive ? (
+        {loading ? <div style={{ marginTop: 12, opacity: 0.75 }}>Loading…</div> : null}
+
+        {err ? (
           <div
             style={{
-              marginTop: 16,
-              padding: 16,
-              borderRadius: 14,
-              border: "1px solid rgba(255,255,255,0.18)",
-              background: "rgba(255,255,255,0.06)",
-              fontWeight: 900,
-              fontSize: 18,
-            }}
-          >
-            🚫 License is inactive. Please contact support.
-          </div>
-        ) : null}
-
-        {err && !inactive ? (
-          <div
-            style={{
-              marginTop: 16,
+              marginTop: 12,
               padding: 12,
               borderRadius: 12,
               border: "1px solid #7f1d1d",
@@ -177,13 +109,8 @@ export default function PlayerClient() {
           </div>
         ) : null}
 
-        {videos.length > 0 ? (
-          <div style={{ marginTop: 18, opacity: 0.85, fontWeight: 800 }}>
-            Showing videos for code:{" "}
-            <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>
-              {code}
-            </span>
-          </div>
+        {!loading && !err && videos.length === 0 ? (
+          <div style={{ marginTop: 12, opacity: 0.8 }}>No videos assigned (or license inactive).</div>
         ) : null}
 
         {videos.length > 0 ? (
@@ -192,7 +119,7 @@ export default function PlayerClient() {
               display: "grid",
               gap: 12,
               gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-              marginTop: 12,
+              marginTop: 14,
             }}
           >
             {videos.map((v) => (
@@ -228,10 +155,6 @@ export default function PlayerClient() {
               </div>
             ))}
           </div>
-        ) : null}
-
-        {!loading && code && videos.length === 0 && !err && !inactive ? (
-          <div style={{ marginTop: 16, opacity: 0.8 }}>No videos assigned to this licensee.</div>
         ) : null}
       </div>
     </div>
