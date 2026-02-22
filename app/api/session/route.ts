@@ -10,7 +10,10 @@ function getAdminSupabase() {
 }
 
 // If controller sometimes posts a label like "AL1V1", translate it to mux playback_id
-async function normalizePlaybackId(supabase: any, playbackOrLabel: string | null) {
+async function normalizePlaybackId(
+  supabase: any,
+  playbackOrLabel: string | null
+) {
   if (!playbackOrLabel) return null;
 
   const looksLikeLabel = playbackOrLabel.length <= 16;
@@ -27,7 +30,10 @@ async function normalizePlaybackId(supabase: any, playbackOrLabel: string | null
   return data?.playback_id || playbackOrLabel;
 }
 
-async function getLicenseeIdForRoom(supabase: any, room: string): Promise<string | null> {
+async function getLicenseeIdForRoom(
+  supabase: any,
+  room: string
+): Promise<string | null> {
   const { data, error } = await supabase
     .from("licensee_rooms")
     .select("licensee_id")
@@ -36,6 +42,25 @@ async function getLicenseeIdForRoom(supabase: any, room: string): Promise<string
 
   if (error) return null;
   return (data?.licensee_id ?? null) as string | null;
+}
+
+// ✅ NEW: enforce licensee.active
+async function isLicenseeActiveForRoom(
+  supabase: any,
+  room: string
+): Promise<boolean> {
+  const licenseeId = await getLicenseeIdForRoom(supabase, room);
+  if (!licenseeId) return false;
+
+  const { data, error } = await supabase
+    .from("licensees")
+    .select("active")
+    .eq("id", licenseeId)
+    .maybeSingle();
+
+  if (error) return false;
+  // default true if missing/null, but if explicitly false → inactive
+  return data?.active !== false;
 }
 
 async function isPlaybackAllowedForRoom(
@@ -52,8 +77,7 @@ async function isPlaybackAllowedForRoom(
   const { data: allowed, error: aErr } = await supabase
     .from("licensee_video_access")
     .select("video_label")
-    .eq("licensee_id", licenseeId)
-  
+    .eq("licensee_id", licenseeId);
 
   if (aErr) return false;
 
@@ -85,7 +109,10 @@ export async function GET(req: NextRequest) {
   const supabase = getAdminSupabase();
   if (!supabase) {
     return NextResponse.json(
-      { error: "Missing SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) or SUPABASE_SERVICE_ROLE_KEY" },
+      {
+        error:
+          "Missing SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) or SUPABASE_SERVICE_ROLE_KEY",
+      },
       { status: 500 }
     );
   }
@@ -137,7 +164,10 @@ export async function POST(req: NextRequest) {
   const supabase = getAdminSupabase();
   if (!supabase) {
     return NextResponse.json(
-      { error: "Missing SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) or SUPABASE_SERVICE_ROLE_KEY" },
+      {
+        error:
+          "Missing SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) or SUPABASE_SERVICE_ROLE_KEY",
+      },
       { status: 500 }
     );
   }
@@ -166,29 +196,45 @@ export async function POST(req: NextRequest) {
   }
 
   if (!existing) {
-    const { error: createErr } = await (supabase as any).from("room_sessions").insert({
-      room_id: room,
-      state: "stopped",
-      playback_id: null,
-      started_at: null,
-      paused_at: null,
-      seek_seconds: 0,
-      command_id: 0,
-      command_type: null,
-      command_value: null,
-      updated_at: new Date().toISOString(),
-    });
+    const { error: createErr } = await (supabase as any)
+      .from("room_sessions")
+      .insert({
+        room_id: room,
+        state: "stopped",
+        playback_id: null,
+        started_at: null,
+        paused_at: null,
+        seek_seconds: 0,
+        command_id: 0,
+        command_type: null,
+        command_value: null,
+        updated_at: new Date().toISOString(),
+      });
 
     if (createErr) {
       return NextResponse.json({ error: createErr.message }, { status: 500 });
     }
   }
 
+  // ✅ NEW: enforce active license BEFORE allowing commands (except stop)
+  const active = await isLicenseeActiveForRoom(supabase as any, room);
+
   // Handle seek command
   if (command === "seek_delta") {
+    // If inactive, block seeks
+    if (!active) {
+      return NextResponse.json(
+        { error: "License inactive" },
+        { status: 403 }
+      );
+    }
+
     const value = Number(body?.value);
     if (!Number.isFinite(value) || value === 0) {
-      return NextResponse.json({ error: "Invalid seek_delta value" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Invalid seek_delta value" },
+        { status: 400 }
+      );
     }
 
     const { data: cur, error: curErr } = await (supabase as any)
@@ -222,17 +268,35 @@ export async function POST(req: NextRequest) {
 
   // Normal state update
   const state = body?.state as string | undefined;
-  const playbackRaw = (body?.playback_id ?? body?.playback) as string | null | undefined;
+  const playbackRaw = (body?.playback_id ?? body?.playback) as
+    | string
+    | null
+    | undefined;
 
   if (!state) {
-    return NextResponse.json({ error: "Missing state (or command)" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Missing state (or command)" },
+      { status: 400 }
+    );
   }
 
-  const playback_id = await normalizePlaybackId(supabase as any, playbackRaw ?? null);
+  // ✅ If inactive, only allow STOP (so you can shut off a delinquent account)
+  if (!active && state !== "stopped") {
+    return NextResponse.json({ error: "License inactive" }, { status: 403 });
+  }
 
-  // ✅ ENFORCEMENT: block playing unlicensed content
+  const playback_id = await normalizePlaybackId(
+    supabase as any,
+    playbackRaw ?? null
+  );
+
+  // ✅ Existing enforcement: block playing unlicensed content
   if (state !== "stopped") {
-    const ok = await isPlaybackAllowedForRoom(supabase as any, room, playback_id);
+    const ok = await isPlaybackAllowedForRoom(
+      supabase as any,
+      room,
+      playback_id
+    );
     if (!ok) {
       return NextResponse.json(
         { error: "Video not allowed for this room/licensee" },
