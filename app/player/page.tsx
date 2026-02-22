@@ -1,6 +1,8 @@
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
+import { headers } from "next/headers";
+
 type PlayerVideo = {
   id: string;
   label: string;
@@ -9,35 +11,43 @@ type PlayerVideo = {
   active?: boolean | null;
 };
 
-async function getJson(url: string) {
+function getBaseUrl() {
+  // Works on Vercel + local
+  const h = headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host");
+  const proto = h.get("x-forwarded-proto") ?? "https";
+  if (!host) return "";
+  return `${proto}://${host}`;
+}
+
+async function getJsonAbsolute(path: string) {
+  const base = getBaseUrl();
+  const url = base ? `${base}${path}` : path;
+
   const res = await fetch(url, { cache: "no-store" });
   const text = await res.text();
+
   let json: any = null;
   try {
     json = text ? JSON.parse(text) : null;
   } catch {}
+
   return { ok: res.ok, status: res.status, json, text };
 }
 
 export default async function PlayerPage({
   searchParams,
 }: {
-  // Next can pass searchParams as an object OR a Promise (newer Next versions)
-  searchParams: { code?: string } | Promise<{ code?: string }>;
+  searchParams: { code?: string };
 }) {
-  const sp = await Promise.resolve(searchParams);
-  const code = (sp?.code || "").trim().toUpperCase();
-
-  const base =
-    process.env.NEXT_PUBLIC_APP_URL ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
+  const code = (searchParams?.code || "").trim().toUpperCase();
 
   let videos: PlayerVideo[] = [];
   let err = "";
 
   if (code) {
-    const out = await getJson(
-      `${base}/api/player/videos?code=${encodeURIComponent(code)}`
+    const out = await getJsonAbsolute(
+      `/api/player/videos?code=${encodeURIComponent(code)}`
     );
 
     if (!out.ok) {
@@ -48,18 +58,9 @@ export default async function PlayerPage({
   }
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "#0b0b0b",
-        color: "#fff",
-        padding: 16,
-      }}
-    >
+    <div style={{ minHeight: "100vh", background: "#0b0b0b", color: "#fff", padding: 16 }}>
       <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-        <h1 style={{ margin: 0, fontSize: 28, fontWeight: 900 }}>
-          IMAOS Player
-        </h1>
+        <h1 style={{ margin: 0, fontSize: 28, fontWeight: 900 }}>IMAOS Player</h1>
         <div style={{ opacity: 0.8, marginTop: 6 }}>
           Enter a licensee code (example: <b>AT100</b>)
         </div>
@@ -67,13 +68,7 @@ export default async function PlayerPage({
         <form
           method="GET"
           action="/player"
-          style={{
-            marginTop: 14,
-            display: "flex",
-            gap: 10,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
+          style={{ marginTop: 14, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}
         >
           <input
             name="code"
@@ -87,8 +82,7 @@ export default async function PlayerPage({
               color: "#fff",
               outline: "none",
               width: 280,
-              fontFamily:
-                "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+              fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
               fontWeight: 800,
               letterSpacing: 0.5,
               textTransform: "uppercase",
@@ -129,13 +123,7 @@ export default async function PlayerPage({
         {code ? (
           <div style={{ marginTop: 14, opacity: 0.85 }}>
             Showing videos for code:{" "}
-            <span
-              style={{
-                fontFamily:
-                  "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-                fontWeight: 900,
-              }}
-            >
+            <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontWeight: 900 }}>
               {code}
             </span>
           </div>
@@ -143,9 +131,7 @@ export default async function PlayerPage({
 
         <div style={{ marginTop: 14 }}>
           {code && videos.length === 0 && !err ? (
-            <div style={{ opacity: 0.8 }}>
-              No videos assigned to this licensee.
-            </div>
+            <div style={{ opacity: 0.8 }}>No videos assigned to this licensee.</div>
           ) : null}
 
           {videos.length > 0 ? (
@@ -170,20 +156,13 @@ export default async function PlayerPage({
                   <div style={{ fontWeight: 900, fontSize: 18 }}>
                     {v.label}
                     {v.active === false ? (
-                      <span style={{ marginLeft: 8, opacity: 0.7 }}>
-                        (inactive)
-                      </span>
+                      <span style={{ marginLeft: 8, opacity: 0.7 }}>(inactive)</span>
                     ) : null}
                   </div>
 
                   <div style={{ opacity: 0.75, marginTop: 6, fontSize: 13 }}>
                     playback_id:{" "}
-                    <span
-                      style={{
-                        fontFamily:
-                          "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-                      }}
-                    >
+                    <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>
                       {v.playback_id}
                     </span>
                   </div>
@@ -192,14 +171,8 @@ export default async function PlayerPage({
                     <video
                       controls
                       playsInline
-                      style={{
-                        width: "100%",
-                        borderRadius: 12,
-                        background: "#000",
-                      }}
-                      src={`https://stream.mux.com/${encodeURIComponent(
-                        v.playback_id
-                      )}.m3u8`}
+                      style={{ width: "100%", borderRadius: 12, background: "#000" }}
+                      src={`https://stream.mux.com/${encodeURIComponent(v.playback_id)}.m3u8`}
                     />
                   </div>
                 </div>
