@@ -22,29 +22,29 @@ async function getJson(url: string) {
 export default async function PlayerPage({
   searchParams,
 }: {
-  searchParams: { code?: string };
+  // Next can pass searchParams as an object OR a Promise (newer Next versions)
+  searchParams: { code?: string } | Promise<{ code?: string }>;
 }) {
-  const code = (searchParams?.code || "").trim().toUpperCase();
+  const sp = await Promise.resolve(searchParams);
+  const code = (sp?.code || "").trim().toUpperCase();
+
+  const base =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
 
   let videos: PlayerVideo[] = [];
   let err = "";
 
   if (code) {
     const out = await getJson(
-      `/api/player/videos?code=${encodeURIComponent(code)}`
+      `${base}/api/player/videos?code=${encodeURIComponent(code)}`
     );
 
     if (!out.ok) {
-  const msg = out.json?.error || out.text || `Request failed (${out.status})`;
-
-  if (String(msg).toLowerCase().includes("inactive")) {
-    err = "License inactive — payment required. Contact IMAOS support.";
-  } else {
-    err = msg;
-  }
-} else {
-  videos = Array.isArray(out.json?.videos) ? out.json.videos : [];
-}
+      err = out.json?.error || out.text || `Request failed (${out.status})`;
+    } else {
+      videos = Array.isArray(out.json?.videos) ? out.json.videos : [];
+    }
   }
 
   return (
