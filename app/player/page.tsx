@@ -35,10 +35,16 @@ export default async function PlayerPage({
     );
 
     if (!out.ok) {
-      err = out.json?.error || out.text || `Request failed (${out.status})`;
-    } else {
-      videos = Array.isArray(out.json?.videos) ? out.json.videos : [];
-    }
+  const msg = out.json?.error || out.text || `Request failed (${out.status})`;
+
+  if (String(msg).toLowerCase().includes("inactive")) {
+    err = "License inactive — payment required. Contact IMAOS support.";
+  } else {
+    err = msg;
+  }
+} else {
+  videos = Array.isArray(out.json?.videos) ? out.json.videos : [];
+}
   }
 
   return (
