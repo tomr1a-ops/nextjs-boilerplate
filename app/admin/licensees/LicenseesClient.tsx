@@ -12,8 +12,8 @@ type Licensee = {
 
 type Video = {
   id: string;
-  label?: string | null;       // ← THIS matches your API
-  playback_id?: string | null; // ← THIS matches your API
+  label?: string | null; // matches /api/admin/videos response
+  playback_id?: string | null; // matches /api/admin/videos response
   sort_order?: number | null;
   active?: boolean | null;
   created_at?: string | null;
@@ -46,7 +46,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
   // video assignment modal state
   const [showVideosFor, setShowVideosFor] = useState<Licensee | null>(null);
   const [allVideos, setAllVideos] = useState<Video[]>([]);
-  // checked is keyed by VIDEO LABEL (slug uppercased), not video id
+  // checked is keyed by VIDEO LABEL (uppercase), not video id
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [savingVideos, setSavingVideos] = useState(false);
   const [videosErr, setVideosErr] = useState("");
@@ -184,14 +184,14 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
         return;
       }
 
-      // CURRENT TRUTH: { licensee_id, video_labels: ["A1V1", "A1V2"] }
+      // CURRENT TRUTH: { licensee_id, video_labels: ["AL1V1", "AL1V2"] }
       const assignedLabels: string[] = Array.isArray(outAssigned.json?.video_labels) ? outAssigned.json.video_labels : [];
       const assignedSet = new Set(assignedLabels.map(normLabel));
 
-      // 3) Build checkbox map keyed by slug(label)
+      // 3) Build checkbox map keyed by label
       const map: Record<string, boolean> = {};
       for (const v of vids) {
-        const label = normLabel(v.slug);
+        const label = normLabel(v.label);
         if (!label) continue;
         map[label] = assignedSet.has(label);
       }
@@ -368,9 +368,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
             }}
           >
             <div style={{ fontWeight: 700 }}>{x.name || "—"}</div>
-            <div style={{ opacity: 0.9, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>
-              {x.code || "—"}
-            </div>
+            <div style={{ opacity: 0.9, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>{x.code || "—"}</div>
             <div style={{ opacity: 0.9 }}>{x.email || "—"}</div>
             <div style={{ opacity: 0.7 }}>{x.created_at ? new Date(x.created_at).toLocaleString() : "—"}</div>
 
@@ -501,11 +499,13 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
 
             <div style={{ marginTop: 14, borderTop: "1px solid #222", paddingTop: 12 }}>
               {allVideos.length === 0 ? (
-                <div style={{ opacity: 0.8 }}>No videos found. Add videos first in Videos admin (confirm /api/admin/videos returns data).</div>
+                <div style={{ opacity: 0.8 }}>
+                  No videos found. (Confirm <code>/api/admin/videos</code> returns a list.)
+                </div>
               ) : (
                 <div style={{ display: "grid", gap: 10 }}>
                   {allVideos.map((v) => {
-                    const label = normLabel(v.slug);
+                    const label = normLabel(v.label);
                     if (!label) return null;
 
                     return (
@@ -531,11 +531,11 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                         />
                         <div style={{ flex: 1 }}>
                           <div style={{ fontWeight: 900 }}>
-                            {v.title || v.slug || v.id}
+                            {v.label || v.id}
                             {v.active === false ? <span style={{ marginLeft: 8, opacity: 0.7 }}>(inactive)</span> : null}
                           </div>
                           <div style={{ opacity: 0.75, marginTop: 2, fontSize: 13 }}>
-                            label: {label} • mux_playback_id: {v.mux_playback_id || "—"}
+                            label: {label} • playback_id: {v.playback_id || "—"}
                           </div>
                         </div>
                       </label>
