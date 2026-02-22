@@ -1,6 +1,8 @@
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
+import { headers } from "next/headers";
+
 type PlayerVideo = {
   id: string;
   label: string;
@@ -8,6 +10,13 @@ type PlayerVideo = {
   sort_order?: number | null;
   active?: boolean | null;
 };
+
+function getBaseUrl() {
+  const h = headers();
+  const proto = h.get("x-forwarded-proto") || "https";
+  const host = h.get("x-forwarded-host") || h.get("host");
+  return `${proto}://${host}`;
+}
 
 async function getJson(url: string) {
   const res = await fetch(url, { cache: "no-store" });
@@ -20,18 +29,19 @@ async function getJson(url: string) {
 }
 
 export default async function PlayerPage({
-  searchParams,
+  params,
 }: {
-  searchParams: { code?: string };
+  params: { roomId: string };
 }) {
-  const code = (searchParams?.code || "").trim().toUpperCase();
+  const code = (params?.roomId || "").trim().toUpperCase();
+  const baseUrl = getBaseUrl();
 
   let videos: PlayerVideo[] = [];
   let err = "";
 
   if (code) {
     const out = await getJson(
-      `/api/player/videos?code=${encodeURIComponent(code)}`
+      `${baseUrl}/api/player/videos?code=${encodeURIComponent(code)}`
     );
 
     if (!out.ok) {
@@ -54,55 +64,24 @@ export default async function PlayerPage({
         <h1 style={{ margin: 0, fontSize: 28, fontWeight: 900 }}>
           IMAOS Player
         </h1>
-        <div style={{ opacity: 0.8, marginTop: 6 }}>
-          Enter a licensee code (example: <b>AT100</b>)
-        </div>
 
-        <form
-          method="GET"
-          action="/player"
-          style={{
-            marginTop: 14,
-            display: "flex",
-            gap: 10,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
-          <input
-            name="code"
-            defaultValue={code}
-            placeholder="Licensee code (e.g. AT100)"
+        <div style={{ opacity: 0.8, marginTop: 6 }}>
+          Code:{" "}
+          <span
             style={{
-              padding: "12px 14px",
-              borderRadius: 12,
-              border: "1px solid #333",
-              background: "#0f0f0f",
-              color: "#fff",
-              outline: "none",
-              width: 280,
               fontFamily:
                 "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-              fontWeight: 800,
-              letterSpacing: 0.5,
-              textTransform: "uppercase",
-            }}
-          />
-          <button
-            type="submit"
-            style={{
-              padding: "12px 16px",
-              borderRadius: 12,
-              border: "1px solid #1f4d2a",
-              background: "#22c55e",
-              color: "#000",
               fontWeight: 900,
-              cursor: "pointer",
             }}
           >
-            Load Videos
-          </button>
-        </form>
+            {code || "(missing)"}
+          </span>
+        </div>
+
+        {/* helpful debug line */}
+        <div style={{ opacity: 0.55, marginTop: 6, fontSize: 12 }}>
+          API: {baseUrl}/api/player/videos?code={encodeURIComponent(code)}
+        </div>
 
         {err ? (
           <div
@@ -120,26 +99,9 @@ export default async function PlayerPage({
           </div>
         ) : null}
 
-        {code ? (
-          <div style={{ marginTop: 14, opacity: 0.85 }}>
-            Showing videos for code:{" "}
-            <span
-              style={{
-                fontFamily:
-                  "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-                fontWeight: 900,
-              }}
-            >
-              {code}
-            </span>
-          </div>
-        ) : null}
-
         <div style={{ marginTop: 14 }}>
           {code && videos.length === 0 && !err ? (
-            <div style={{ opacity: 0.8 }}>
-              No videos assigned to this licensee.
-            </div>
+            <div style={{ opacity: 0.8 }}>No videos assigned to this licensee.</div>
           ) : null}
 
           {videos.length > 0 ? (
