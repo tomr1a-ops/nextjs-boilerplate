@@ -1,71 +1,75 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
-function json(status: number, body: any) {
-  return new NextResponse(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+function getAdminSupabase() {
+  const SUPABASE_URL =
+    process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
+  return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false },
   });
 }
 
-export async function GET(req: Request) {
-  try {
-    const url = new URL(req.url);
-    const code = (url.searchParams.get("code") || "").trim().toUpperCase();
-    if (!code) return json(400, { error: "Missing code" });
+function json(status: number, body: any) {
+  return NextResponse.json(body, {
+    status,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
 
-    const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!SUPABASE_URL || !SERVICE_ROLE) return json(500, { error: "Server env missing" });
+// GET /api/player/videos?code=AT100
+export async function GET(req: NextRequest) {
+  const supabase = getAdminSupabase();
+  if (!supabase) return json(500, { error: "Server env missing" });
 
-    const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
+  const codeRaw = req.nextUrl.searchParams.get("code") || "";
+  const code = codeRaw.trim().toUpperCase();
+  if (!code) return json(400, { error: "Missing code" });
 
-    // 1) Find licensee by code (and active)
-    const { data: lic, error: licErr } = await supabase
-      .from("licensees")
-      .select("id, name, code, active")
-      .eq("code", code)
-      .maybeSingle();
+  // 1) Find licensee by code + check active
+  const { data: licensee, error: lErr } = await (supabase as any)
+    .from("licensees")
+    .select("id, name, code, active, created_at")
+    .eq("code", code)
+    .maybeSingle();
 
-    if (licErr) return json(500, { error: licErr.message });
-    if (!lic) return json(404, { error: "Invalid code" });
+  if (lErr) return json(500, { error: lErr.message });
+  if (!licensee) return json(404, { error: "Licensee not found" });
 
-    if (lic.active === false) {
-      return json(403, { error: "License inactive" });
-    }
-
-    // 2) Allowed labels
-    const { data: accessRows, error: accessErr } = await supabase
-      .from("licensee_video_access")
-      .select("video_label")
-      .eq("licensee_id", lic.id);
-
-    if (accessErr) return json(500, { error: accessErr.message });
-
-    const labels = (accessRows || [])
-      .map((r: any) => String(r.video_label || "").trim().toUpperCase())
-      .filter(Boolean);
-
-    if (labels.length === 0) return json(200, { licensee: lic, videos: [] });
-
-    // 3) Fetch videos matching allowed labels
-    const { data: vids, error: vidsErr } = await supabase
-      .from("videos")
-      .select("id, label, playback_id, sort_order, active, created_at")
-      .in("label", labels)
-      .eq("active", true)
-      .order("sort_order", { ascending: true });
-
-    if (vidsErr) return json(500, { error: vidsErr.message });
-
-    const allowedSet = new Set(labels);
-    const filtered = (vids || []).filter((v: any) => allowedSet.has(String(v.label || "").toUpperCase()));
-
-    return json(200, { licensee: lic, videos: filtered });
-  } catch (e: any) {
-    return json(500, { error: e?.message || "Server error" });
+  // ✅ BLOCK if inactive
+  if (licensee.active === false) {
+    return json(403, { error: "License inactive" });
   }
+
+  // 2) Get allowed labels for this licensee
+  const { data: allowed, error: aErr } = await (supabase as any)
+    .from("licensee_video_access")
+    .select("video_label")
+    .eq("licensee_id", licensee.id);
+
+  if (aErr) return json(500, { error: aErr.message });
+
+  const labels = (allowed ?? [])
+    .map((x: any) => String(x?.video_label ?? "").trim().toUpperCase())
+    .filter(Boolean);
+
+  if (labels.length === 0) {
+    return json(200, { licensee, videos: [] });
+  }
+
+  // 3) Load active videos matching those labels
+  const { data: videos, error: vErr } = await (supabase as any)
+    .from("videos")
+    .select("id, label, playback_id, sort_order, active, created_at")
+    .in("label", labels)
+    .eq("active", true)
+    .order("sort_order", { ascending: true });
+
+  if (vErr) return json(500, { error: vErr.message });
+
+  return json(200, { licensee, videos: videos ?? [] });
 }
