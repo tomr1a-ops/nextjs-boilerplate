@@ -7,14 +7,14 @@ type Licensee = {
   code?: string | null;
   name?: string | null;
   email?: string | null;
-  active?: boolean | null;
+  active?: boolean | null; // ✅ new boolean
   created_at?: string | null;
 };
 
 type Video = {
   id: string;
-  label?: string | null; // matches /api/admin/videos response
-  playback_id?: string | null; // matches /api/admin/videos response
+  label?: string | null;
+  playback_id?: string | null;
   sort_order?: number | null;
   active?: boolean | null;
   created_at?: string | null;
@@ -30,7 +30,9 @@ async function safeJson(res: Response) {
 }
 
 function normLabel(v: unknown) {
-  return String(v ?? "").trim().toUpperCase();
+  return String(v ?? "")
+    .trim()
+    .toUpperCase();
 }
 
 export default function LicenseesClient({ adminKey }: { adminKey: string }) {
@@ -57,7 +59,10 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/admin/licensees", { cache: "no-store", headers: adminHeaders });
+      const res = await fetch("/api/admin/licensees", {
+        cache: "no-store",
+        headers: adminHeaders,
+      });
       const out = await safeJson(res);
 
       if (!out.ok) {
@@ -88,12 +93,13 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
         headers: { "Content-Type": "application/json", ...adminHeaders },
         body: JSON.stringify({
           name: name.trim(),
-          code: code.trim().toUpperCase(),
+          code: code.trim(),
           email: email.trim() || null,
+          active: true, // ✅ default to active
         }),
       });
-
       const out = await safeJson(res);
+
       if (!out.ok) {
         setErr(out.json?.error || out.text || `Create failed (${out.status})`);
         return;
@@ -121,8 +127,8 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
         method: "DELETE",
         headers: adminHeaders,
       });
-
       const out = await safeJson(res);
+
       if (!out.ok) {
         setErr(out.json?.error || out.text || `Delete failed (${out.status})`);
         return;
@@ -136,15 +142,17 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
     }
   }
 
-  async function setActive(id: string, active: boolean) {
+  async function toggleActive(licensee: Licensee) {
     setErr("");
     setLoading(true);
 
     try {
-      const res = await fetch(`/api/admin/licensees`, {
-        method: "PATCH",
+      const nextActive = !(licensee.active ?? true);
+
+      const res = await fetch(`/api/admin/licensees?id=${encodeURIComponent(licensee.id)}`, {
+        method: "PUT",
         headers: { "Content-Type": "application/json", ...adminHeaders },
-        body: JSON.stringify({ id, active }),
+        body: JSON.stringify({ active: nextActive }),
       });
 
       const out = await safeJson(res);
@@ -169,7 +177,11 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
     setChecked({});
 
     try {
-      const resVideos = await fetch(`/api/admin/videos`, { cache: "no-store", headers: adminHeaders });
+      // 1) Load all videos
+      const resVideos = await fetch(`/api/admin/videos`, {
+        cache: "no-store",
+        headers: adminHeaders,
+      });
       const outVideos = await safeJson(resVideos);
 
       if (!outVideos.ok) {
@@ -187,12 +199,13 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
 
       setAllVideos(vids);
 
+      // 2) Load assigned labels for this licensee
       const resAssigned = await fetch(`/api/admin/licensees/${encodeURIComponent(licensee.id)}/videos`, {
         cache: "no-store",
         headers: adminHeaders,
       });
-
       const outAssigned = await safeJson(resAssigned);
+
       if (!outAssigned.ok) {
         setVideosErr(outAssigned.json?.error || outAssigned.text || `Assigned load failed (${outAssigned.status})`);
         return;
@@ -201,6 +214,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
       const assignedLabels: string[] = Array.isArray(outAssigned.json?.video_labels) ? outAssigned.json.video_labels : [];
       const assignedSet = new Set(assignedLabels.map(normLabel));
 
+      // 3) Build checkbox map keyed by label
       const map: Record<string, boolean> = {};
       for (const v of vids) {
         const label = normLabel(v.label);
@@ -221,6 +235,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
 
   async function saveVideos() {
     if (!showVideosFor) return;
+
     setVideosErr("");
     setSavingVideos(true);
 
@@ -262,19 +277,40 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Licensee name (required)"
-          style={{ padding: "12px 14px", borderRadius: 12, border: "1px solid #333", background: "#0f0f0f", color: "#fff", outline: "none" }}
+          style={{
+            padding: "12px 14px",
+            borderRadius: 12,
+            border: "1px solid #333",
+            background: "#0f0f0f",
+            color: "#fff",
+            outline: "none",
+          }}
         />
         <input
           value={code}
           onChange={(e) => setCode(e.target.value)}
           placeholder="Licensee code (required) e.g. AT100"
-          style={{ padding: "12px 14px", borderRadius: 12, border: "1px solid #333", background: "#0f0f0f", color: "#fff", outline: "none" }}
+          style={{
+            padding: "12px 14px",
+            borderRadius: 12,
+            border: "1px solid #333",
+            background: "#0f0f0f",
+            color: "#fff",
+            outline: "none",
+          }}
         />
         <input
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="Email (optional)"
-          style={{ padding: "12px 14px", borderRadius: 12, border: "1px solid #333", background: "#0f0f0f", color: "#fff", outline: "none" }}
+          style={{
+            padding: "12px 14px",
+            borderRadius: 12,
+            border: "1px solid #333",
+            background: "#0f0f0f",
+            color: "#fff",
+            outline: "none",
+          }}
         />
         <button
           onClick={createLicensee}
@@ -309,7 +345,17 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
       </div>
 
       {err ? (
-        <div style={{ marginTop: 12, padding: 12, borderRadius: 12, border: "1px solid #7f1d1d", background: "#2a0f10", color: "#fecaca", fontWeight: 700 }}>
+        <div
+          style={{
+            marginTop: 12,
+            padding: 12,
+            borderRadius: 12,
+            border: "1px solid #7f1d1d",
+            background: "#2a0f10",
+            color: "#fecaca",
+            fontWeight: 700,
+          }}
+        >
           {err}
         </div>
       ) : null}
@@ -317,7 +363,15 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
       <div style={{ marginTop: 14, opacity: 0.85, fontSize: 14 }}>{loading ? "Loading..." : `${items.length} licensee(s)`}</div>
 
       <div style={{ marginTop: 10, border: "1px solid #333", borderRadius: 14, overflow: "hidden" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 2fr 1fr auto auto auto", gap: 0, padding: 12, background: "#111" }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "2fr 1fr 1fr 2fr 1fr auto auto auto",
+            gap: 0,
+            padding: 12,
+            background: "#111",
+          }}
+        >
           <div style={{ fontWeight: 900, opacity: 0.9 }}>Name</div>
           <div style={{ fontWeight: 900, opacity: 0.9 }}>Code</div>
           <div style={{ fontWeight: 900, opacity: 0.9 }}>Status</div>
@@ -329,7 +383,8 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
         </div>
 
         {items.map((x) => {
-          const isActive = x.active !== false;
+          const isActive = x.active ?? true;
+
           return (
             <div
               key={x.id}
@@ -340,27 +395,32 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                 borderTop: "1px solid #222",
                 alignItems: "center",
                 gap: 10,
+                opacity: isActive ? 1 : 0.55,
               }}
             >
               <div style={{ fontWeight: 700 }}>{x.name || "—"}</div>
-              <div style={{ opacity: 0.9, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>{x.code || "—"}</div>
 
-              <div style={{ fontWeight: 900, color: isActive ? "#22c55e" : "#f87171" }}>
+              <div style={{ opacity: 0.9, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>
+                {x.code || "—"}
+              </div>
+
+              <div style={{ fontWeight: 900, color: isActive ? "#22c55e" : "#f97316" }}>
                 {isActive ? "ACTIVE" : "INACTIVE"}
               </div>
 
               <div style={{ opacity: 0.9 }}>{x.email || "—"}</div>
+
               <div style={{ opacity: 0.7 }}>{x.created_at ? new Date(x.created_at).toLocaleString() : "—"}</div>
 
               <button
-                onClick={() => setActive(x.id, !isActive)}
+                onClick={() => toggleActive(x)}
                 disabled={loading}
                 style={{
                   padding: "10px 14px",
                   borderRadius: 12,
-                  border: "1px solid #334155",
-                  background: isActive ? "#111827" : "#14532d",
-                  color: "#e2e8f0",
+                  border: "1px solid #333",
+                  background: isActive ? "#111827" : "#7c2d12",
+                  color: "#fff",
                   fontWeight: 900,
                   cursor: loading ? "not-allowed" : "pointer",
                 }}
@@ -422,7 +482,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
         >
           <div
             style={{
-              width: "min(960px, 96vw)",
+              width: "min(980px, 96vw)",
               maxHeight: "80vh",
               overflow: "auto",
               background: "#0b0b0b",
@@ -447,7 +507,15 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                 <button
                   onClick={() => setShowVideosFor(null)}
                   disabled={savingVideos}
-                  style={{ padding: "10px 14px", borderRadius: 12, border: "1px solid #333", background: "#1b1b1b", color: "#fff", fontWeight: 800 }}
+                  style={{
+                    padding: "10px 14px",
+                    borderRadius: 12,
+                    border: "1px solid #333",
+                    background: "#1b1b1b",
+                    color: "#fff",
+                    fontWeight: 800,
+                    cursor: savingVideos ? "not-allowed" : "pointer",
+                  }}
                 >
                   Close
                 </button>
@@ -455,7 +523,15 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                 <button
                   onClick={saveVideos}
                   disabled={savingVideos}
-                  style={{ padding: "10px 14px", borderRadius: 12, border: "1px solid #1f4d2a", background: savingVideos ? "#14532d" : "#22c55e", color: "#000", fontWeight: 900 }}
+                  style={{
+                    padding: "10px 14px",
+                    borderRadius: 12,
+                    border: "1px solid #1f4d2a",
+                    background: savingVideos ? "#14532d" : "#22c55e",
+                    color: "#000",
+                    fontWeight: 900,
+                    cursor: savingVideos ? "not-allowed" : "pointer",
+                  }}
                 >
                   {savingVideos ? "Saving..." : "Save"}
                 </button>
@@ -463,7 +539,17 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
             </div>
 
             {videosErr ? (
-              <div style={{ marginTop: 12, padding: 12, borderRadius: 12, border: "1px solid #7f1d1d", background: "#2a0f10", color: "#fecaca", fontWeight: 700 }}>
+              <div
+                style={{
+                  marginTop: 12,
+                  padding: 12,
+                  borderRadius: 12,
+                  border: "1px solid #7f1d1d",
+                  background: "#2a0f10",
+                  color: "#fecaca",
+                  fontWeight: 700,
+                }}
+              >
                 {videosErr}
               </div>
             ) : null}
@@ -498,12 +584,9 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                           disabled={savingVideos}
                           style={{ width: 18, height: 18 }}
                         />
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontWeight: 900 }}>
-                            {v.label || v.id}
-                            {v.active === false ? <span style={{ marginLeft: 8, opacity: 0.7 }}>(inactive)</span> : null}
-                          </div>
-                          <div style={{ opacity: 0.75, marginTop: 2, fontSize: 13 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 900 }}>{v.label || v.id}</div>
+                          <div style={{ opacity: 0.75, marginTop: 4, fontSize: 12, wordBreak: "break-all" }}>
                             label: {label} • playback_id: {v.playback_id || "—"}
                           </div>
                         </div>
