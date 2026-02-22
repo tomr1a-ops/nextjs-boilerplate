@@ -1,61 +1,118 @@
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
-import { createServerClient } from "@supabase/ssr";
-import { createClient } from "@supabase/supabase-js";
+// app/admin/layout.tsx
+import Link from "next/link";
 
-export default async function AdminLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-  const service = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
 
-  if (!url || !anon || !service) {
-    // If env vars missing, don't leak details; just bounce.
-    redirect("/login");
-  }
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ minHeight: "100vh", background: "#0b0b0b", color: "#fff" }}>
+      <div style={{ maxWidth: 1040, margin: "0 auto", padding: 18 }}>
+        {/* Top Bar */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            padding: "12px 14px",
+            borderRadius: 14,
+            border: "1px solid #2a2a2a",
+            background: "#0f0f0f",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ fontWeight: 900, letterSpacing: 0.3 }}>IMAOS Admin</div>
 
-  // ✅ Next.js 16: cookies() is async
-  const cookieStore = await cookies();
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                alignItems: "center",
+                flexWrap: "wrap",
+              }}
+            >
+              <Link
+                href="/admin"
+                style={{
+                  color: "#fff",
+                  textDecoration: "none",
+                  padding: "8px 10px",
+                  borderRadius: 12,
+                  border: "1px solid #2a2a2a",
+                  background: "#141414",
+                  fontWeight: 800,
+                }}
+              >
+                Dashboard
+              </Link>
 
-  // 1) Get logged-in user via cookies (anon key)
-  const supabase = createServerClient(url, anon, {
-    cookies: {
-      getAll() {
-        return cookieStore.getAll();
-      },
-      setAll() {
-        // no-op in a server layout
-      },
-    },
-  });
+              <Link
+                href="/admin/licensees"
+                style={{
+                  color: "#7dd3fc",
+                  textDecoration: "none",
+                  padding: "8px 10px",
+                  borderRadius: 12,
+                  border: "1px solid #2a2a2a",
+                  background: "#141414",
+                  fontWeight: 800,
+                }}
+              >
+                Licensees
+              </Link>
 
-  const { data } = await supabase.auth.getUser();
-  const user = data?.user;
+              <Link
+                href="/admin/users"
+                style={{
+                  color: "#a7f3d0",
+                  textDecoration: "none",
+                  padding: "8px 10px",
+                  borderRadius: 12,
+                  border: "1px solid #2a2a2a",
+                  background: "#141414",
+                  fontWeight: 800,
+                }}
+              >
+                Users
+              </Link>
 
-  if (!user) {
-    redirect("/login");
-  }
+              <Link
+                href="/admin/videos"
+                style={{
+                  color: "#fcd34d",
+                  textDecoration: "none",
+                  padding: "8px 10px",
+                  borderRadius: 12,
+                  border: "1px solid #2a2a2a",
+                  background: "#141414",
+                  fontWeight: 800,
+                }}
+              >
+                Videos
+              </Link>
+            </div>
+          </div>
 
-  // 2) Check role via service role (bypasses RLS cleanly)
-  const supabaseService = createClient(url, service, {
-    auth: { persistSession: false },
-  });
+          <Link
+            href="/"
+            style={{
+              color: "#bbb",
+              textDecoration: "none",
+              padding: "8px 10px",
+              borderRadius: 12,
+              border: "1px solid #2a2a2a",
+              background: "#141414",
+              fontWeight: 800,
+            }}
+          >
+            Home
+          </Link>
+        </div>
 
-  const { data: row } = await supabaseService
-    .from("admin_users")
-    .select("role, active")
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  const role = (row?.role || "").toString();
-  const active = row?.active !== false;
-
-  if (!active || !["super_admin", "admin"].includes(role)) {
-    redirect("/login");
-  }
-
-  return <>{children}</>;
+        {/* Page Body */}
+        <div style={{ marginTop: 14 }}>{children}</div>
+      </div>
+    </div>
+  );
 }
