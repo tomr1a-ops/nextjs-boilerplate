@@ -55,16 +55,12 @@ export default function ControlClient({ roomId }: { roomId: string }) {
     setLoading(true);
 
     try {
-      // ✅ NEW: pull ONLY allowed videos for this licensee code
-      const res = await fetch(`/api/player/videos?code=${encodeURIComponent(code)}&t=${Date.now()}`, {
-        cache: "no-store",
-      });
-
-      const json = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(json?.error || `Failed (${res.status})`);
-
-      const list = Array.isArray(json?.videos) ? json.videos : [];
-      setVideos(list);
+  const res = await fetch(`/api/videos?room=${encodeURIComponent(rid)}&t=${Date.now()}`, {
+  cache: "no-store",
+});
+const json = await res.json().catch(() => null);
+if (!res.ok) throw new Error(json?.error || `Failed (${res.status})`);
+setVideos(Array.isArray(json?.videos) ? json.videos : []);
     } catch (e: any) {
       setErr(e?.message || "Failed to load videos");
       setVideos([]);
