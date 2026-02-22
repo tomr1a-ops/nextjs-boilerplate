@@ -28,7 +28,13 @@ async function safeJson(res: Response) {
   }
 }
 
-export default function LicenseesClient() {
+function normLabel(v: unknown) {
+  return String(v ?? "")
+    .trim()
+    .toUpperCase();
+}
+
+export default function LicenseesClient({ adminKey }: { adminKey: string }) {
   const [items, setItems] = useState<Licensee[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string>("");
@@ -45,16 +51,19 @@ export default function LicenseesClient() {
   const [savingVideos, setSavingVideos] = useState(false);
   const [videosErr, setVideosErr] = useState("");
 
-  const canCreate = useMemo(
-    () => name.trim().length > 0 && code.trim().length > 0,
-    [name, code]
-  );
+  const canCreate = useMemo(() => name.trim().length > 0 && code.trim().length > 0, [name, code]);
+
+  const adminHeaders = useMemo(() => ({ "x-admin-key": adminKey }), [adminKey]);
 
   async function refresh() {
     setErr("");
     setLoading(true);
+
     try {
-      const res = await fetch("/api/admin/licensees", { cache: "no-store" });
+      const res = await fetch("/api/admin/licensees", {
+        cache: "no-store",
+        headers: adminHeaders,
+      });
       const out = await safeJson(res);
 
       if (!out.ok) {
@@ -75,12 +84,14 @@ export default function LicenseesClient() {
 
   async function createLicensee() {
     if (!canCreate) return;
+
     setErr("");
     setLoading(true);
+
     try {
       const res = await fetch("/api/admin/licensees", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...adminHeaders },
         body: JSON.stringify({
           name: name.trim(),
           code: code.trim(),
@@ -107,11 +118,14 @@ export default function LicenseesClient() {
 
   async function deleteLicensee(id: string) {
     if (!confirm("Delete this licensee? This cannot be undone.")) return;
+
     setErr("");
     setLoading(true);
+
     try {
       const res = await fetch(`/api/admin/licensees?id=${encodeURIComponent(id)}`, {
         method: "DELETE",
+        headers: adminHeaders,
       });
       const out = await safeJson(res);
 
@@ -137,7 +151,10 @@ export default function LicenseesClient() {
 
     try {
       // 1) Load all videos
-      const resVideos = await fetch(`/api/admin/videos`, { cache: "no-store" });
+      const resVideos = await fetch(`/api/admin/videos`, {
+        cache: "no-store",
+        headers: adminHeaders,
+      });
       const outVideos = await safeJson(resVideos);
 
       if (!outVideos.ok) {
@@ -149,15 +166,17 @@ export default function LicenseesClient() {
         ? outVideos.json.videos
         : Array.isArray(outVideos.json?.data)
         ? outVideos.json.data
+        : Array.isArray(outVideos.json)
+        ? outVideos.json
         : [];
 
       setAllVideos(vids);
 
       // 2) Load assigned labels for this licensee
-      const resAssigned = await fetch(
-        `/api/admin/licensees/${encodeURIComponent(licensee.id)}/videos`,
-        { cache: "no-store" }
-      );
+      const resAssigned = await fetch(`/api/admin/licensees/${encodeURIComponent(licensee.id)}/videos`, {
+        cache: "no-store",
+        headers: adminHeaders,
+      });
       const outAssigned = await safeJson(resAssigned);
 
       if (!outAssigned.ok) {
@@ -165,16 +184,14 @@ export default function LicenseesClient() {
         return;
       }
 
-      const assignedLabels: string[] = Array.isArray(outAssigned.json?.video_labels)
-        ? outAssigned.json.video_labels
-        : [];
+      // CURRENT TRUTH: { licensee_id, video_labels: ["A1V1", "A1V2"] }
+      const assignedLabels: string[] = Array.isArray(outAssigned.json?.video_labels) ? outAssigned.json.video_labels : [];
+      const assignedSet = new Set(assignedLabels.map(normLabel));
 
-      const assignedSet = new Set(assignedLabels.map((x) => String(x).toUpperCase()));
-
-      // 3) Build checkbox map keyed by slug (label)
+      // 3) Build checkbox map keyed by slug(label)
       const map: Record<string, boolean> = {};
       for (const v of vids) {
-        const label = (v.slug || "").toString().toUpperCase();
+        const label = normLabel(v.slug);
         if (!label) continue;
         map[label] = assignedSet.has(label);
       }
@@ -185,30 +202,28 @@ export default function LicenseesClient() {
   }
 
   function toggleVideo(label: string) {
-    const key = String(label || "").toUpperCase();
+    const key = normLabel(label);
     if (!key) return;
     setChecked((prev) => ({ ...prev, [key]: !prev[key] }));
   }
 
   async function saveVideos() {
     if (!showVideosFor) return;
+
     setVideosErr("");
     setSavingVideos(true);
 
     try {
       const selectedLabels = Object.entries(checked)
         .filter(([, v]) => v)
-        .map(([k]) => String(k).toUpperCase());
+        .map(([k]) => normLabel(k))
+        .filter(Boolean);
 
-      // Replace all labels for this licensee
-      const res = await fetch(
-        `/api/admin/licensees/${encodeURIComponent(showVideosFor.id)}/videos`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ video_labels: selectedLabels }),
-        }
-      );
+      const res = await fetch(`/api/admin/licensees/${encodeURIComponent(showVideosFor.id)}/videos`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...adminHeaders },
+        body: JSON.stringify({ video_labels: selectedLabels }),
+      });
 
       const out = await safeJson(res);
 
@@ -249,7 +264,7 @@ export default function LicenseesClient() {
         <input
           value={code}
           onChange={(e) => setCode(e.target.value)}
-          placeholder="Licensee code (required) e.g. ATLANTA1"
+          placeholder="Licensee code (required) e.g. AT100"
           style={{
             padding: "12px 14px",
             borderRadius: 12,
@@ -320,9 +335,7 @@ export default function LicenseesClient() {
         </div>
       ) : null}
 
-      <div style={{ marginTop: 14, opacity: 0.85, fontSize: 14 }}>
-        {loading ? "Loading..." : `${items.length} licensee(s)`}
-      </div>
+      <div style={{ marginTop: 14, opacity: 0.85, fontSize: 14 }}>{loading ? "Loading..." : `${items.length} licensee(s)`}</div>
 
       <div style={{ marginTop: 10, border: "1px solid #333", borderRadius: 14, overflow: "hidden" }}>
         <div
@@ -395,9 +408,7 @@ export default function LicenseesClient() {
           </div>
         ))}
 
-        {items.length === 0 && !loading ? (
-          <div style={{ padding: 14, opacity: 0.7 }}>No licensees found.</div>
-        ) : null}
+        {items.length === 0 && !loading ? <div style={{ padding: 14, opacity: 0.7 }}>No licensees found.</div> : null}
       </div>
 
       {/* Videos Modal */}
@@ -490,13 +501,11 @@ export default function LicenseesClient() {
 
             <div style={{ marginTop: 14, borderTop: "1px solid #222", paddingTop: 12 }}>
               {allVideos.length === 0 ? (
-                <div style={{ opacity: 0.8 }}>
-                  No videos found. Add videos first in your Videos admin (and confirm /api/admin/videos returns data).
-                </div>
+                <div style={{ opacity: 0.8 }}>No videos found. Add videos first in Videos admin (confirm /api/admin/videos returns data).</div>
               ) : (
                 <div style={{ display: "grid", gap: 10 }}>
                   {allVideos.map((v) => {
-                    const label = (v.slug || "").toUpperCase();
+                    const label = normLabel(v.slug);
                     if (!label) return null;
 
                     return (
