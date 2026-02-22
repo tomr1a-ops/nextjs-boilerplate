@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 
 type PlayerVideo = {
   id: string;
@@ -11,38 +10,45 @@ type PlayerVideo = {
   active?: boolean | null;
 };
 
-function cleanCode(input: any) {
-  return (input ?? "")
-    .toString()
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9_-]/g, "");
-}
+const LS_TOKEN = "imaos_device_token";
+const LS_PAIR = "imaos_pair_code";
+const LS_LICCODE = "imaos_licensee_code";
 
 export default function PlayerClient() {
-  const router = useRouter();
-  const sp = useSearchParams();
+  const [deviceToken, setDeviceToken] = useState<string>("");
+  const [licenseeCode, setLicenseeCode] = useState<string>("");
+  const [pairCode, setPairCode] = useState<string>("");
 
-  const initialCode = useMemo(() => cleanCode(sp.get("code") || ""), [sp]);
-
-  const [code, setCode] = useState(initialCode);
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState("");
-  const [inactive, setInactive] = useState(false);
   const [videos, setVideos] = useState<PlayerVideo[]>([]);
+  const [err, setErr] = useState<string>("");
+  const [status, setStatus] = useState<"unpaired" | "pending" | "paired">("unpaired");
+  const [loading, setLoading] = useState<boolean>(false);
 
-  async function loadVideos(nextCode?: string) {
-    const c = cleanCode(nextCode ?? code);
-    if (!c) return;
+  useEffect(() => {
+    const t = localStorage.getItem(LS_TOKEN) || "";
+    const p = localStorage.getItem(LS_PAIR) || "";
+    const c = localStorage.getItem(LS_LICCODE) || "";
+    if (t) {
+      setDeviceToken(t);
+      setStatus("paired");
+    } else {
+      setStatus("unpaired");
+    }
+    if (p) setPairCode(p);
+    if (c) setLicenseeCode(c);
+  }, []);
 
-    setLoading(true);
+  async function loadVideos(tokenOverride?: string) {
+    const token = tokenOverride || deviceToken;
+    if (!token) return;
+
     setErr("");
-    setInactive(false);
-    setVideos([]);
+    setLoading(true);
 
     try {
-      const res = await fetch(`/api/player/videos?code=${encodeURIComponent(c)}&t=${Date.now()}`, {
+      const res = await fetch("/api/player/videos", {
         cache: "no-store",
+        headers: { "x-device-token": token },
       });
 
       const text = await res.text();
@@ -51,184 +57,281 @@ export default function PlayerClient() {
         json = text ? JSON.parse(text) : null;
       } catch {}
 
-      if (res.status === 403) {
-        setInactive(true);
-        setErr(json?.error || "License inactive");
-        return;
-      }
-
       if (!res.ok) {
-        setErr(json?.error || text || `Request failed (${res.status})`);
-        return;
+        throw new Error(json?.error || text || `Request failed (${res.status})`);
       }
 
-      const list = Array.isArray(json?.videos) ? json.videos : [];
-      setVideos(list);
+      setVideos(Array.isArray(json?.videos) ? json.videos : []);
     } catch (e: any) {
       setErr(e?.message || "Failed to load videos");
+      setVideos([]);
     } finally {
       setLoading(false);
     }
   }
 
-  function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const c = cleanCode(code);
-    router.replace(`/player?code=${encodeURIComponent(c)}`);
-    loadVideos(c);
+  async function submitPair() {
+    setErr("");
+    const code = licenseeCode.trim().toUpperCase();
+    const pair = pairCode.trim();
+
+    if (!code || !pair) {
+      setErr("Enter licensee code and pair code.");
+      return;
+    }
+
+    localStorage.setItem(LS_PAIR, pair);
+    localStorage.setItem(LS_LICCODE, code);
+
+    setLoading(true);
+    try {
+      const res = await fetch("/api/device/pair", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ licensee_code: code, pair_code: pair }),
+      });
+
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok) throw new Error(json?.error || `Pair failed (${res.status})`);
+
+      if (json?.status === "active" && json?.device_token) {
+        localStorage.setItem(LS_TOKEN, json.device_token);
+        setDeviceToken(json.device_token);
+        setStatus("paired");
+        await loadVideos(json.device_token);
+      } else {
+        setStatus("pending");
+      }
+    } catch (e: any) {
+      setErr(e?.message || "Pair failed");
+    } finally {
+      setLoading(false);
+    }
   }
 
-  useEffect(() => {
-    if (initialCode) {
-      setCode(initialCode);
-      loadVideos(initialCode);
+  async function checkApproval() {
+    setErr("");
+    const pair = (pairCode || localStorage.getItem(LS_PAIR) || "").trim();
+    if (!pair) {
+      setErr("Missing pair code.");
+      return;
     }
+
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/device/pair?pair_code=${encodeURIComponent(pair)}`, { cache: "no-store" });
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok) throw new Error(json?.error || `Check failed (${res.status})`);
+
+      if (json?.status === "active" && json?.device_token) {
+        localStorage.setItem(LS_TOKEN, json.device_token);
+        setDeviceToken(json.device_token);
+        setStatus("paired");
+        await loadVideos(json.device_token);
+      } else {
+        setStatus("pending");
+      }
+    } catch (e: any) {
+      setErr(e?.message || "Check failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function resetPairing() {
+    localStorage.removeItem(LS_TOKEN);
+    localStorage.removeItem(LS_PAIR);
+    localStorage.removeItem(LS_LICCODE);
+    setDeviceToken("");
+    setVideos([]);
+    setStatus("unpaired");
+    setErr("");
+  }
+
+  // Auto-load if already paired
+  useEffect(() => {
+    if (status === "paired" && deviceToken) loadVideos();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialCode]);
+  }, [status, deviceToken]);
 
   return (
     <div style={{ minHeight: "100vh", background: "#0b0b0b", color: "#fff", padding: 16 }}>
       <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-        <h1 style={{ margin: 0, fontSize: 38, fontWeight: 900 }}>IMAOS Player</h1>
-        <div style={{ opacity: 0.8, marginTop: 6 }}>
-          Enter a licensee code (example: <b>AT100</b>)
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+          <h1 style={{ margin: 0, fontSize: 40, fontWeight: 900 }}>IMAOS Player</h1>
+          <div style={{ opacity: 0.8, fontWeight: 800 }}>
+            Status:{" "}
+            <span style={{ fontFamily: "ui-monospace, Menlo, Monaco, Consolas, monospace" }}>
+              {status.toUpperCase()}
+            </span>
+          </div>
         </div>
 
-        <form
-          onSubmit={onSubmit}
-          style={{
-            marginTop: 14,
-            display: "flex",
-            gap: 10,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
-          <input
-            value={code}
-            onChange={(e) => setCode(cleanCode(e.target.value))}
-            placeholder="Licensee code (e.g. AT100)"
-            style={{
-              padding: "14px 16px",
-              borderRadius: 14,
-              border: "1px solid #333",
-              background: "#0f0f0f",
-              color: "#fff",
-              outline: "none",
-              width: 340,
-              fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-              fontWeight: 900,
-              letterSpacing: 1,
-              textTransform: "uppercase",
-              fontSize: 18,
-            }}
-          />
-          <button
-            type="submit"
-            disabled={!code || loading}
-            style={{
-              padding: "14px 18px",
-              borderRadius: 14,
-              border: "1px solid #1f4d2a",
-              background: "#22c55e",
-              color: "#000",
-              fontWeight: 900,
-              cursor: !code || loading ? "not-allowed" : "pointer",
-              opacity: !code || loading ? 0.6 : 1,
-              fontSize: 18,
-            }}
-          >
-            {loading ? "Loading…" : "Load Videos"}
-          </button>
-        </form>
-
-        {inactive ? (
-          <div
-            style={{
-              marginTop: 16,
-              padding: 16,
-              borderRadius: 14,
-              border: "1px solid rgba(255,255,255,0.18)",
-              background: "rgba(255,255,255,0.06)",
-              fontWeight: 900,
-              fontSize: 18,
-            }}
-          >
-            🚫 License is inactive. Please contact support.
-          </div>
-        ) : null}
-
-        {err && !inactive ? (
-          <div
-            style={{
-              marginTop: 16,
-              padding: 12,
-              borderRadius: 12,
-              border: "1px solid #7f1d1d",
-              background: "#2a0f10",
-              color: "#fecaca",
-              fontWeight: 800,
-            }}
-          >
+        {err ? (
+          <div style={{ marginTop: 12, padding: 12, borderRadius: 12, border: "1px solid #7f1d1d", background: "#2a0f10", color: "#fecaca", fontWeight: 800 }}>
             {err}
           </div>
         ) : null}
 
-        {videos.length > 0 ? (
-          <div style={{ marginTop: 18, opacity: 0.85, fontWeight: 800 }}>
-            Showing videos for code:{" "}
-            <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>
-              {code}
-            </span>
-          </div>
-        ) : null}
+        {/* Pairing UI */}
+        {status !== "paired" ? (
+          <div style={{ marginTop: 18, border: "1px solid #222", borderRadius: 16, background: "#0f0f0f", padding: 16 }}>
+            <div style={{ fontWeight: 900, fontSize: 18 }}>Pair this device</div>
+            <div style={{ opacity: 0.75, marginTop: 6 }}>
+              Enter the licensee code + a pair code. Then you (admin) approve it in IMAOS Admin.
+            </div>
 
-        {videos.length > 0 ? (
-          <div
-            style={{
-              display: "grid",
-              gap: 12,
-              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-              marginTop: 12,
-            }}
-          >
-            {videos.map((v) => (
-              <div
-                key={v.id}
+            <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
+              <input
+                value={licenseeCode}
+                onChange={(e) => setLicenseeCode(e.target.value)}
+                placeholder="Licensee code (e.g. AT100)"
                 style={{
-                  border: "1px solid #222",
-                  borderRadius: 14,
-                  background: "#0f0f0f",
-                  padding: 12,
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  border: "1px solid #333",
+                  background: "#0b0b0b",
+                  color: "#fff",
+                  width: 260,
+                  fontFamily: "ui-monospace, Menlo, Monaco, Consolas, monospace",
+                  fontWeight: 900,
+                  textTransform: "uppercase",
+                }}
+              />
+
+              <input
+                value={pairCode}
+                onChange={(e) => setPairCode(e.target.value)}
+                placeholder="Pair code (you provide)"
+                style={{
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  border: "1px solid #333",
+                  background: "#0b0b0b",
+                  color: "#fff",
+                  width: 260,
+                  fontFamily: "ui-monospace, Menlo, Monaco, Consolas, monospace",
+                  fontWeight: 900,
+                }}
+              />
+
+              <button
+                onClick={submitPair}
+                disabled={loading}
+                style={{
+                  padding: "12px 16px",
+                  borderRadius: 12,
+                  border: "1px solid #1f4d2a",
+                  background: "#22c55e",
+                  color: "#000",
+                  fontWeight: 900,
+                  cursor: "pointer",
+                  opacity: loading ? 0.7 : 1,
                 }}
               >
-                <div style={{ fontWeight: 900, fontSize: 18 }}>
-                  {v.label}
-                  {v.active === false ? <span style={{ marginLeft: 8, opacity: 0.7 }}>(inactive)</span> : null}
-                </div>
+                Submit Pair Request
+              </button>
 
-                <div style={{ opacity: 0.75, marginTop: 6, fontSize: 13 }}>
-                  playback_id:{" "}
-                  <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>
-                    {v.playback_id}
-                  </span>
-                </div>
+              {status === "pending" ? (
+                <button
+                  onClick={checkApproval}
+                  disabled={loading}
+                  style={{
+                    padding: "12px 16px",
+                    borderRadius: 12,
+                    border: "1px solid rgba(255,255,255,0.18)",
+                    background: "#374151",
+                    color: "#fff",
+                    fontWeight: 900,
+                    cursor: "pointer",
+                    opacity: loading ? 0.7 : 1,
+                  }}
+                >
+                  Check Approval
+                </button>
+              ) : null}
+            </div>
 
-                <div style={{ marginTop: 10 }}>
-                  <video
-                    controls
-                    playsInline
-                    style={{ width: "100%", borderRadius: 12, background: "#000" }}
-                    src={`https://stream.mux.com/${encodeURIComponent(v.playback_id)}.m3u8`}
-                  />
-                </div>
+            {status === "pending" ? (
+              <div style={{ marginTop: 12, opacity: 0.8, fontWeight: 800 }}>
+                Pending approval. Go to Admin → Devices and click “Approve”.
               </div>
-            ))}
+            ) : null}
           </div>
-        ) : null}
+        ) : (
+          // Paired UI
+          <div style={{ marginTop: 18, display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button
+              onClick={() => loadVideos()}
+              disabled={loading}
+              style={{
+                padding: "12px 16px",
+                borderRadius: 12,
+                border: "1px solid #1f4d2a",
+                background: "#22c55e",
+                color: "#000",
+                fontWeight: 900,
+                cursor: "pointer",
+                opacity: loading ? 0.7 : 1,
+              }}
+            >
+              Refresh
+            </button>
 
-        {!loading && code && videos.length === 0 && !err && !inactive ? (
-          <div style={{ marginTop: 16, opacity: 0.8 }}>No videos assigned to this licensee.</div>
+            <button
+              onClick={resetPairing}
+              style={{
+                padding: "12px 16px",
+                borderRadius: 12,
+                border: "1px solid rgba(255,255,255,0.18)",
+                background: "#374151",
+                color: "#fff",
+                fontWeight: 900,
+                cursor: "pointer",
+              }}
+            >
+              Reset Pairing
+            </button>
+          </div>
+        )}
+
+        {/* Videos */}
+        {status === "paired" ? (
+          <div style={{ marginTop: 18 }}>
+            {loading ? <div style={{ opacity: 0.7 }}>Loading…</div> : null}
+
+            {!loading && videos.length === 0 ? (
+              <div style={{ opacity: 0.8 }}>No videos assigned to this licensee.</div>
+            ) : null}
+
+            {videos.length > 0 ? (
+              <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(2, minmax(0, 1fr))", marginTop: 12 }}>
+                {videos.map((v) => (
+                  <div key={v.id} style={{ border: "1px solid #222", borderRadius: 14, background: "#0f0f0f", padding: 12 }}>
+                    <div style={{ fontWeight: 900, fontSize: 18 }}>{v.label}</div>
+
+                    <div style={{ opacity: 0.75, marginTop: 6, fontSize: 13 }}>
+                      playback_id:{" "}
+                      <span style={{ fontFamily: "ui-monospace, Menlo, Monaco, Consolas, monospace" }}>
+                        {v.playback_id}
+                      </span>
+                    </div>
+
+                    <div style={{ marginTop: 10 }}>
+                      <video
+                        controls
+                        playsInline
+                        style={{ width: "100%", borderRadius: 12, background: "#000" }}
+                        src={`https://stream.mux.com/${encodeURIComponent(v.playback_id)}.m3u8`}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
         ) : null}
       </div>
     </div>
