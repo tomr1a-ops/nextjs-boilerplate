@@ -58,8 +58,21 @@ export default function ControlClient({ roomId }: { roomId: string }) {
   const res = await fetch(`/api/videos?room=${encodeURIComponent(rid)}&t=${Date.now()}`, {
   cache: "no-store",
 });
+
 const json = await res.json().catch(() => null);
-if (!res.ok) throw new Error(json?.error || `Failed (${res.status})`);
+
+// If license is inactive, API returns 403.
+// Show a clean message + hide buttons.
+if (res.status === 403) {
+  setVideos([]);
+  setErr("License inactive — no access. Reactivate in Admin → Licensees.");
+  return;
+}
+
+if (!res.ok) {
+  throw new Error(json?.error || `Failed (${res.status})`);
+}
+
 setVideos(Array.isArray(json?.videos) ? json.videos : []);
     } catch (e: any) {
       setErr(e?.message || "Failed to load videos");
