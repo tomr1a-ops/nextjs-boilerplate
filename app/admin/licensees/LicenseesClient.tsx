@@ -540,9 +540,6 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                             {v.label || v.id}
                             {v.active === false ? <span style={{ marginLeft: 8, opacity: 0.7 }}>(inactive)</span> : null}
                           </div>
-                          <div style={{ opacity: 0.75, marginTop: 2, fontSize: 13 }}>
-                            label: {label} • playback_id: {v.playback_id || "—"}
-                          </div>
                         </div>
                       </label>
                     );
