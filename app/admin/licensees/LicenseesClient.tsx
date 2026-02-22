@@ -12,9 +12,9 @@ type Licensee = {
 
 type Video = {
   id: string;
-  title?: string | null;
-  slug?: string | null; // IMPORTANT: used as the "label" (e.g. AL1V1)
-  mux_playback_id?: string | null;
+  label?: string | null;       // ← THIS matches your API
+  playback_id?: string | null; // ← THIS matches your API
+  sort_order?: number | null;
   active?: boolean | null;
   created_at?: string | null;
 };
