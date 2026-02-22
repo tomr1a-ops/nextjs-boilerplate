@@ -41,7 +41,8 @@ export default function ControlClient({ roomId }: { roomId: string }) {
     return { raw: "", clean: "", source: "none" as const };
   }, [roomId, params?.roomId]);
 
-  const rid = derived.clean;
+  const rid = derived.clean; // cleaned version used by session endpoints
+  const code = (rid || "").toUpperCase(); // licensee code for /api/player/videos?code=
 
   const [videos, setVideos] = useState<VideoRow[]>([]);
   const [err, setErr] = useState("");
@@ -49,16 +50,21 @@ export default function ControlClient({ roomId }: { roomId: string }) {
   const [loading, setLoading] = useState(true);
 
   async function loadVideos() {
-    if (!rid) return;
+    if (!code) return;
     setErr("");
     setLoading(true);
+
     try {
-      const res = await fetch(`/api/videos?room=${encodeURIComponent(rid)}&t=${Date.now()}`, {
+      // ✅ NEW: pull ONLY allowed videos for this licensee code
+      const res = await fetch(`/api/player/videos?code=${encodeURIComponent(code)}&t=${Date.now()}`, {
         cache: "no-store",
       });
+
       const json = await res.json().catch(() => null);
       if (!res.ok) throw new Error(json?.error || `Failed (${res.status})`);
-      setVideos(Array.isArray(json?.videos) ? json.videos : []);
+
+      const list = Array.isArray(json?.videos) ? json.videos : [];
+      setVideos(list);
     } catch (e: any) {
       setErr(e?.message || "Failed to load videos");
       setVideos([]);
@@ -83,6 +89,7 @@ export default function ControlClient({ roomId }: { roomId: string }) {
   async function postSession(body: any) {
     if (!rid) return;
     setErr("");
+
     const res = await fetch(`/api/session?room=${encodeURIComponent(rid)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -95,14 +102,19 @@ export default function ControlClient({ roomId }: { roomId: string }) {
     }
   }
 
-  async function playLabel(label: string) {
+  async function playVideo(v: VideoRow) {
     try {
+      // Prefer playback_id if present; otherwise fall back to label
+      const payloadPlayback = v.playback_id || v.label;
+
       await postSession({
         state: "playing",
-        playback_id: label, // labels allowed; API resolves label → playback_id if needed
+        playback_id: payloadPlayback,
+        label: v.label, // optional, helpful for debugging/logs
         started_at: new Date().toISOString(),
         paused_at: null,
       });
+
       await loadState();
     } catch (e: any) {
       setErr(e?.message || "Play failed");
@@ -149,7 +161,7 @@ export default function ControlClient({ roomId }: { roomId: string }) {
     <div style={{ minHeight: "100vh", background: "#000", color: "#fff", padding: 18 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <div style={{ fontSize: 44, fontWeight: 900, letterSpacing: -1 }}>
-          IMAOS Control — {rid || "missing"}
+          IMAOS Control — {code || "missing"}
         </div>
 
         <div
@@ -249,7 +261,7 @@ export default function ControlClient({ roomId }: { roomId: string }) {
       </div>
 
       <div style={{ marginTop: 18, opacity: 0.8, fontSize: 14 }}>
-        Allowed videos for this room
+        Allowed videos for this code
       </div>
 
       {err ? (
@@ -279,14 +291,14 @@ export default function ControlClient({ roomId }: { roomId: string }) {
             opacity: 0.7,
           }}
         >
-          No allowed videos found for <b>{rid || "missing"}</b>.
+          No allowed videos found for <b>{code || "missing"}</b>.
         </div>
       ) : (
         <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 10 }}>
           {videos.map((v) => (
             <button
               key={v.label}
-              onClick={() => playLabel(v.label)}
+              onClick={() => playVideo(v)}
               style={{
                 padding: "14px 10px",
                 borderRadius: 14,
