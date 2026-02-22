@@ -26,6 +26,62 @@ function supabaseAdmin() {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
+function parseBool(v: any): boolean | null {
+  if (typeof v === "boolean") return v;
+  if (typeof v === "number") return v === 1;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    if (["1", "true", "yes", "y", "on", "active"].includes(s)) return true;
+    if (["0", "false", "no", "n", "off", "inactive"].includes(s)) return false;
+  }
+  return null;
+}
+
+// shared handler for PATCH/PUT
+async function updateActive(req: Request) {
+  const auth = requireAdminKey(req);
+  if (!auth.ok) return json(401, { error: auth.error });
+
+  try {
+    const supabase = supabaseAdmin();
+
+    const url = new URL(req.url);
+
+    // Allow BOTH:
+    // 1) JSON body: { id, active }
+    // 2) Query string: ?id=UUID&active=false
+    const body = await req.json().catch(() => ({}));
+
+    const id =
+      String(body?.id || "").trim() ||
+      String(url.searchParams.get("id") || "").trim();
+
+    // active can be in body.active OR body.status OR query active/status
+    const activeCandidate =
+      body?.active ??
+      body?.status ??
+      url.searchParams.get("active") ??
+      url.searchParams.get("status");
+
+    const activeParsed = parseBool(activeCandidate);
+
+    if (!id) return json(400, { error: "Missing id" });
+    if (activeParsed === null) return json(400, { error: "Missing/invalid active (true/false)" });
+
+    const { data, error } = await supabase
+      .from("licensees")
+      .update({ active: activeParsed })
+      .eq("id", id)
+      .select("id, name, code, email, active, created_at")
+      .maybeSingle();
+
+    if (error) return json(500, { error: error.message });
+    return json(200, { licensee: data });
+  } catch (e: any) {
+    return json(500, { error: e?.message || "Server error" });
+  }
+}
+
 // GET /api/admin/licensees
 export async function GET(req: Request) {
   const auth = requireAdminKey(req);
@@ -94,30 +150,12 @@ export async function DELETE(req: Request) {
   }
 }
 
-// PATCH /api/admin/licensees  body: { id, active }
+// PATCH /api/admin/licensees   body: { id, active }  OR  /api/admin/licensees?id=UUID&active=false
 export async function PATCH(req: Request) {
-  const auth = requireAdminKey(req);
-  if (!auth.ok) return json(401, { error: auth.error });
+  return updateActive(req);
+}
 
-  try {
-    const supabase = supabaseAdmin();
-    const body = await req.json().catch(() => ({}));
-
-    const id = String(body?.id || "").trim();
-    const active = !!body?.active;
-
-    if (!id) return json(400, { error: "Missing id" });
-
-    const { data, error } = await supabase
-      .from("licensees")
-      .update({ active })
-      .eq("id", id)
-      .select("id, name, code, email, active, created_at")
-      .maybeSingle();
-
-    if (error) return json(500, { error: error.message });
-    return json(200, { licensee: data });
-  } catch (e: any) {
-    return json(500, { error: e?.message || "Server error" });
-  }
+// ✅ ADD THIS: some frontends use PUT for updates
+export async function PUT(req: Request) {
+  return updateActive(req);
 }
