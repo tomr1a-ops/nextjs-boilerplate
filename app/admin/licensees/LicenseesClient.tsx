@@ -504,14 +504,13 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                 </div>
               ) : (
                 <div
-  style={{
-    display: "grid",
-    gap: 10,
-    gridTemplateColumns: "repeat(3, minmax(0, 1fr))", // 3 columns on desktop
-  }}
->
-  {allVideos.map(...)}
-</div>
+                  style={{
+                    display: "grid",
+                    gap: 10,
+                    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                  }}
+                >
+                  {allVideos.map((v) => {
                     const label = normLabel(v.label);
                     if (!label) return null;
 
