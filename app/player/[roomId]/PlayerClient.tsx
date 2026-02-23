@@ -74,13 +74,20 @@ export default function PlayerClient({ roomId }: { roomId: string }) {
       v.playback_id === playback_id || v.label === playback_id
     );
 
+    // If playback_id looks like a label (short, uppercase), use it directly
+    const isLabel = playback_id && playback_id.length < 20 && /^[A-Z0-9]+$/i.test(playback_id);
+    const displayLabel = videoInfo?.label || (isLabel ? playback_id : null);
+
     // Handle state changes
     if (state === "playing" && playback_id) {
       const newPlaybackId = videoInfo?.playback_id || playback_id;
       
       // New video or different video
       if (!currentVideo || currentVideo.playback_id !== newPlaybackId) {
-        setCurrentVideo(videoInfo || { label: playback_id, playback_id: newPlaybackId });
+        setCurrentVideo({ 
+          label: displayLabel || "Video", 
+          playback_id: newPlaybackId 
+        });
         video.src = `https://stream.mux.com/${newPlaybackId}.m3u8`;
         video.load();
         video.play().catch(e => console.error("Play error:", e));
@@ -174,7 +181,7 @@ export default function PlayerClient({ roomId }: { roomId: string }) {
               fontWeight: 900,
               color: "#22c55e",
             }}>
-              {currentVideo.label}
+              {currentVideo.label || "Playing"}
             </div>
           )}
         </div>
