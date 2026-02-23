@@ -450,8 +450,8 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "2fr 1fr 1fr 1fr auto auto auto",
-            gap: 0,
+            gridTemplateColumns: "2fr 1fr 1fr 1fr auto auto",
+            gap: 12,
             padding: 12,
             background: "#111",
           }}
@@ -459,7 +459,6 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
           <div style={{ fontWeight: 900, opacity: 0.9 }}>Name</div>
           <div style={{ fontWeight: 900, opacity: 0.9 }}>Code</div>
           <div style={{ fontWeight: 900, opacity: 0.9 }}>Status</div>
-          <div style={{ fontWeight: 900, opacity: 0.9 }}>Email</div>
           <div style={{ fontWeight: 900, opacity: 0.9 }}>Created</div>
           <div />
           <div />
@@ -473,11 +472,11 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
               key={x.id}
               style={{
                 display: "grid",
-                gridTemplateColumns: "2fr 1fr 1fr 1fr auto auto auto",
+                gridTemplateColumns: "2fr 1fr 1fr 1fr auto auto",
                 padding: 12,
                 borderTop: "1px solid #222",
                 alignItems: "center",
-                gap: 10,
+                gap: 12,
                 opacity: isActive ? 1 : 0.55,
               }}
             >
@@ -493,8 +492,6 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
               <div style={{ fontWeight: 900, color: isActive ? "#22c55e" : "#f97316" }}>
                 {isActive ? "ACTIVE" : "INACTIVE"}
               </div>
-
-              <div style={{ opacity: 0.9 }}>{x.email || "—"}</div>
 
               <div style={{ opacity: 0.7 }}>
                 {x.created_at ? new Date(x.created_at).toLocaleDateString() : "—"}
