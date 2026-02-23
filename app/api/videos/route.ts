@@ -66,9 +66,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Missing room parameter" }, { status: 400 });
   }
 
+  // Convert to uppercase to match licensee codes (AT100, not at100)
+  const roomUpper = room.toUpperCase();
+
   try {
     // Get licensee ID
-    const licenseeId = await getLicenseeIdForRoom(supabase, room);
+    const licenseeId = await getLicenseeIdForRoom(supabase, roomUpper);
     if (!licenseeId) {
       return NextResponse.json(
         { error: "Unauthorized" },
