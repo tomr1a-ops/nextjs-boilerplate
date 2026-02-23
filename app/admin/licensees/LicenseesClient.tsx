@@ -602,12 +602,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
           </tbody>
         </table>
       </div>
-        {items.length === 0 && !loading && (
-          <div style={{ padding: 14, opacity: 0.7 }}>
-            No licensees found. Click &quot;New Licensee Onboarding&quot; to add your first licensee.
-          </div>
-        )}
-      </div>
+        
 
       {/* Onboarding Modal */}
       {showOnboardingModal && (
