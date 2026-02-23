@@ -456,10 +456,10 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
             background: "#111",
           }}
         >
-          <div style={{ fontWeight: 900, opacity: 0.9 }}>Name</div>
-          <div style={{ fontWeight: 900, opacity: 0.9 }}>Code</div>
-          <div style={{ fontWeight: 900, opacity: 0.9 }}>Status</div>
-          <div style={{ fontWeight: 900, opacity: 0.9 }}>Created</div>
+          <div style={{ fontWeight: 900, opacity: 0.9, textAlign: "left" }}>Name</div>
+          <div style={{ fontWeight: 900, opacity: 0.9, textAlign: "left" }}>Code</div>
+          <div style={{ fontWeight: 900, opacity: 0.9, textAlign: "left" }}>Status</div>
+          <div style={{ fontWeight: 900, opacity: 0.9, textAlign: "left" }}>Created</div>
           <div />
           <div />
           <div />
