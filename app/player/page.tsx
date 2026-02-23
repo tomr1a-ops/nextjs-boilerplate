@@ -1,8 +1,6 @@
 import PlayerClient from "./PlayerClient";
 
-export const dynamic = "force-dynamic";
-export const fetchCache = "force-no-store";
-
-export default function PlayerPage() {
-  return <PlayerClient />;
+export default async function PlayerPage({ params }: { params: Promise<{ code: string }> }) {
+  const { code } = await params;
+  return <PlayerClient code={code} />;
 }
