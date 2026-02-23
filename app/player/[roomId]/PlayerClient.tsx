@@ -1,162 +1,292 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import Hls from "hls.js";
 
-type PlayerVideo = {
-  id: string;
-  label: string;
-  playback_id: string;
-  sort_order?: number | null;
-  active?: boolean | null;
+type SessionData = {
+  state: string;
+  playback_id: string | null;
+  started_at: string | null;
+  paused_at: string | null;
+  seek_seconds: number;
+  command_id: number;
+  command_type: string | null;
+  command_value: number | null;
 };
 
-function clean(input: any) {
-  return (input ?? "")
-    .toString()
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9_-]/g, "");
-}
+type Video = {
+  label: string;
+  playback_id: string;
+};
 
-export default function PlayerClient() {
-  const params = useParams() as { roomId?: string } | null;
-
-  const code = useMemo(() => clean(params?.roomId), [params?.roomId]);
-
-  const [videos, setVideos] = useState<PlayerVideo[]>([]);
+export default function PlayerClient({ code }: { code: string }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const hlsRef = useRef<Hls | null>(null);
+  const [session, setSession] = useState<SessionData | null>(null);
+  const [videos, setVideos] = useState<Video[]>([]);
+  const [currentVideo, setCurrentVideo] = useState<Video | null>(null);
   const [err, setErr] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [lastCommandId, setLastCommandId] = useState(0);
 
-  async function load() {
-    if (!code) return;
-    setErr("");
-    setLoading(true);
+  const codeUpper = code.toUpperCase();
 
+  // Load available videos
+  async function loadVideos() {
     try {
-      const res = await fetch(`/api/player/videos?code=${encodeURIComponent(code)}&t=${Date.now()}`, {
-        cache: "no-store",
-      });
-
-      const text = await res.text();
-      let json: any = null;
-      try {
-        json = text ? JSON.parse(text) : null;
-      } catch {}
-
-      if (!res.ok) {
-        throw new Error(json?.error || text || `Request failed (${res.status})`);
+      const res = await fetch(`/api/videos?room=${encodeURIComponent(code)}`);
+      const json = await res.json();
+      
+      if (res.ok) {
+        setVideos(json.videos || []);
       }
-
-      setVideos(Array.isArray(json?.videos) ? json.videos : []);
     } catch (e: any) {
-      setErr(e?.message || "Failed to load videos");
-      setVideos([]);
-    } finally {
-      setLoading(false);
+      console.error("Failed to load videos:", e);
     }
   }
 
+  // Poll session state
+  async function pollSession() {
+    try {
+      const res = await fetch(`/api/session?room=${encodeURIComponent(code)}&t=${Date.now()}`, {
+        cache: "no-store",
+      });
+      const json = await res.json();
+
+      if (res.ok) {
+        setSession(json);
+        setErr("");
+      } else {
+        setErr(json?.error || "Session error");
+      }
+    } catch (e: any) {
+      console.error("Poll error:", e);
+    }
+  }
+
+  // Initialize HLS player
+  function initPlayer(playbackId: string) {
+    const video = videoRef.current;
+    if (!video) return;
+
+    // Clean up existing HLS instance
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
+
+    const src = `https://stream.mux.com/${playbackId}.m3u8`;
+
+    if (Hls.isSupported()) {
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: true,
+      });
+      
+      hls.loadSource(src);
+      hls.attachMedia(video);
+      
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        video.play().catch(e => console.error("Play error:", e));
+      });
+
+      hls.on(Hls.Events.ERROR, (event, data) => {
+        if (data.fatal) {
+          console.error("HLS fatal error:", data);
+        }
+      });
+
+      hlsRef.current = hls;
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Native HLS support (Safari)
+      video.src = src;
+      video.addEventListener('loadedmetadata', () => {
+        video.play().catch(e => console.error("Play error:", e));
+      });
+    }
+  }
+
+  // Handle session state changes
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!session || !videoRef.current) return;
+
+    const video = videoRef.current;
+    const { state, playback_id, command_id, command_type, command_value } = session;
+
+    // Find video info
+    const videoInfo = videos.find(v => 
+      v.playback_id === playback_id || v.label === playback_id
+    );
+
+    // Handle state changes
+    if (state === "playing" && playback_id) {
+      // New video or different video
+      if (!currentVideo || currentVideo.playback_id !== (videoInfo?.playback_id || playback_id)) {
+        setCurrentVideo(videoInfo || { label: playback_id, playback_id: playback_id });
+        initPlayer(videoInfo?.playback_id || playback_id);
+      } else {
+        // Same video, just resume
+        video.play().catch(e => console.error("Play error:", e));
+      }
+    } else if (state === "paused") {
+      video.pause();
+    } else if (state === "stopped") {
+      video.pause();
+      video.currentTime = 0;
+      setCurrentVideo(null);
+    }
+
+    // Handle seek commands
+    if (command_id && command_id !== lastCommandId && command_type === "seek_delta" && command_value) {
+      video.currentTime += command_value;
+      setLastCommandId(command_id);
+    }
+
+  }, [session, videos, currentVideo, lastCommandId]);
+
+  // Load videos on mount
+  useEffect(() => {
+    loadVideos();
   }, [code]);
 
+  // Poll session every second
+  useEffect(() => {
+    pollSession();
+    const interval = setInterval(pollSession, 1000);
+    return () => clearInterval(interval);
+  }, [code]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+      }
+    };
+  }, []);
+
+  const state = session?.state || "unknown";
+  const isPlaying = state === "playing";
+
   return (
-    <div style={{ minHeight: "100vh", background: "#0b0b0b", color: "#fff", padding: 16 }}>
-      <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-        <h1 style={{ margin: 0, fontSize: 34, fontWeight: 900 }}>IMAOS Player</h1>
-
-        <div style={{ opacity: 0.85, marginTop: 8 }}>
-          Code:{" "}
-          <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontWeight: 900 }}>
-            {code || "(missing)"}
-          </span>
+    <div style={{ 
+      minHeight: "100vh", 
+      background: "#000", 
+      color: "#fff",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 20,
+    }}>
+      {/* Header */}
+      <div style={{ 
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        padding: "16px 24px",
+        background: "rgba(0,0,0,0.9)",
+        borderBottom: "1px solid rgba(255,255,255,0.1)",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        zIndex: 10,
+      }}>
+        <div>
+          <div style={{ fontSize: 24, fontWeight: 900 }}>IMAOS Player</div>
+          <div style={{ fontSize: 14, opacity: 0.7, marginTop: 4 }}>
+            Code: <span style={{ fontFamily: "monospace", fontWeight: 900 }}>{codeUpper}</span>
+          </div>
         </div>
 
-        <div style={{ marginTop: 14 }}>
-          <button
-            onClick={load}
-            style={{
-              padding: "12px 16px",
+        <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+          <div style={{
+            padding: "8px 16px",
+            borderRadius: 999,
+            background: isPlaying ? "rgba(34, 197, 94, 0.2)" : "rgba(255,255,255,0.1)",
+            border: `1px solid ${isPlaying ? "#22c55e" : "rgba(255,255,255,0.2)"}`,
+            fontSize: 14,
+            fontWeight: 900,
+            color: isPlaying ? "#22c55e" : "#fff",
+          }}>
+            {isPlaying ? "▶ PLAYING" : state.toUpperCase()}
+          </div>
+
+          {currentVideo && (
+            <div style={{
+              padding: "8px 16px",
               borderRadius: 12,
-              border: "1px solid #1f4d2a",
-              background: "#22c55e",
-              color: "#000",
+              background: "rgba(34, 197, 94, 0.1)",
+              border: "1px solid #22c55e",
+              fontSize: 14,
               fontWeight: 900,
-              cursor: "pointer",
-            }}
-          >
-            Refresh
-          </button>
+              color: "#22c55e",
+            }}>
+              {currentVideo.label}
+            </div>
+          )}
         </div>
-
-        {loading ? <div style={{ marginTop: 12, opacity: 0.75 }}>Loading…</div> : null}
-
-        {err ? (
-          <div
-            style={{
-              marginTop: 12,
-              padding: 12,
-              borderRadius: 12,
-              border: "1px solid #7f1d1d",
-              background: "#2a0f10",
-              color: "#fecaca",
-              fontWeight: 800,
-            }}
-          >
-            {err}
-          </div>
-        ) : null}
-
-        {!loading && !err && videos.length === 0 ? (
-          <div style={{ marginTop: 12, opacity: 0.8 }}>No videos assigned (or license inactive).</div>
-        ) : null}
-
-        {videos.length > 0 ? (
-          <div
-            style={{
-              display: "grid",
-              gap: 12,
-              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-              marginTop: 14,
-            }}
-          >
-            {videos.map((v) => (
-              <div
-                key={v.id}
-                style={{
-                  border: "1px solid #222",
-                  borderRadius: 14,
-                  background: "#0f0f0f",
-                  padding: 12,
-                }}
-              >
-                <div style={{ fontWeight: 900, fontSize: 18 }}>
-                  {v.label}
-                  {v.active === false ? <span style={{ marginLeft: 8, opacity: 0.7 }}>(inactive)</span> : null}
-                </div>
-
-                <div style={{ opacity: 0.75, marginTop: 6, fontSize: 13 }}>
-                  playback_id:{" "}
-                  <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>
-                    {v.playback_id}
-                  </span>
-                </div>
-
-                <div style={{ marginTop: 10 }}>
-                  <video
-                    controls
-                    playsInline
-                    style={{ width: "100%", borderRadius: 12, background: "#000" }}
-                    src={`https://stream.mux.com/${encodeURIComponent(v.playback_id)}.m3u8`}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : null}
       </div>
+
+      {/* Video Player */}
+      <div style={{ 
+        width: "100%", 
+        maxWidth: 1920,
+        aspectRatio: "16/9",
+        background: "#000",
+        borderRadius: 16,
+        overflow: "hidden",
+        boxShadow: isPlaying ? "0 0 60px rgba(34, 197, 94, 0.3)" : "none",
+      }}>
+        <video
+          ref={videoRef}
+          style={{ 
+            width: "100%", 
+            height: "100%",
+            objectFit: "contain",
+          }}
+          playsInline
+        />
+      </div>
+
+      {/* Error Display */}
+      {err && (
+        <div style={{
+          position: "fixed",
+          bottom: 24,
+          left: 24,
+          right: 24,
+          padding: 16,
+          background: "rgba(220, 38, 38, 0.9)",
+          border: "1px solid #ef4444",
+          borderRadius: 12,
+          fontWeight: 700,
+          maxWidth: 600,
+          margin: "0 auto",
+        }}>
+          {err}
+        </div>
+      )}
+
+      {/* Waiting State */}
+      {!isPlaying && !err && (
+        <div style={{
+          position: "fixed",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          textAlign: "center",
+          opacity: 0.5,
+        }}>
+          <div style={{ fontSize: 64, marginBottom: 16 }}>⏸</div>
+          <div style={{ fontSize: 24, fontWeight: 900 }}>
+            Waiting for playback...
+          </div>
+          <div style={{ fontSize: 14, marginTop: 8 }}>
+            Use the control page to start playing
+          </div>
+        </div>
+      )}
     </div>
   );
 }
