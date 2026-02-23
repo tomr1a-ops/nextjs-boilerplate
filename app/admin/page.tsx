@@ -1,4 +1,3 @@
-// app/admin/page.tsx
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
@@ -6,11 +5,10 @@ import { supabaseServer } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
-async function requireAdmin() {
+async function requireAdminPage() {
   const supabase = await supabaseServer();
-
-  const { data: userData } = await supabase.auth.getUser();
-  const user = userData?.user;
+  const { data } = await supabase.auth.getUser();
+  const user = data?.user;
 
   if (!user) redirect("/login?next=/admin");
 
@@ -29,117 +27,291 @@ async function requireAdmin() {
 }
 
 export default async function AdminPage() {
-  const { role, email } = await requireAdmin();
+  const { role, email } = await requireAdminPage();
 
   return (
     <div
       style={{
         minHeight: "100vh",
-        background: "#0b0b0b",
+        background: "linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%)",
         color: "#fff",
-        padding: 24,
+        padding: "40px 24px",
       }}
     >
-      <div style={{ maxWidth: 980, margin: "0 auto" }}>
-        <h1 style={{ margin: 0, fontSize: 28, fontWeight: 900 }}>
-          IMAOS Admin
-        </h1>
-
-        <div style={{ marginTop: 8, opacity: 0.9 }}>
-          Logged in as <b>{email || "unknown"}</b> — role <b>{role}</b>
+      <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+        {/* Header */}
+        <div style={{ textAlign: "center", marginBottom: 60 }}>
+          <h1
+            style={{
+              fontSize: 56,
+              fontWeight: 900,
+              margin: 0,
+              background: "linear-gradient(135deg, #60a5fa 0%, #22c55e 100%)",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+              letterSpacing: -2,
+            }}
+          >
+            IMAOS Command Center
+          </h1>
+          <div style={{ marginTop: 16, fontSize: 16, opacity: 0.7 }}>
+            Logged in as <strong>{email}</strong> — {role}
+          </div>
         </div>
 
+        {/* Main Grid */}
         <div
           style={{
-            marginTop: 18,
             display: "grid",
-            gap: 12,
-            maxWidth: 520,
+            gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+            gap: 24,
+            marginBottom: 40,
           }}
         >
+          {/* Licensees Card */}
           <Link
             href="/admin/licensees"
             style={{
-              display: "block",
-              padding: "14px 16px",
-              borderRadius: 14,
-              border: "1px solid #2a2a2a",
-              background: "#101010",
-              color: "#7dd3fc",
-              fontSize: 18,
-              fontWeight: 900,
               textDecoration: "none",
+              color: "inherit",
             }}
           >
-            → Manage Licensees
+            <div
+              style={{
+                padding: 32,
+                borderRadius: 24,
+                background: "linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%)",
+                border: "1px solid rgba(96, 165, 250, 0.3)",
+                cursor: "pointer",
+                transition: "all 0.3s ease",
+                position: "relative",
+                overflow: "hidden",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "translateY(-4px)";
+                e.currentTarget.style.boxShadow = "0 20px 40px rgba(59, 130, 246, 0.4)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.boxShadow = "none";
+              }}
+            >
+              <div style={{ fontSize: 48, marginBottom: 16 }}>👥</div>
+              <div style={{ fontSize: 28, fontWeight: 900, marginBottom: 8 }}>
+                Licensees
+              </div>
+              <div style={{ fontSize: 14, opacity: 0.9 }}>
+                Manage licensees, assign videos, and control access
+              </div>
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: 16,
+                  right: 16,
+                  fontSize: 32,
+                  opacity: 0.3,
+                }}
+              >
+                →
+              </div>
+            </div>
           </Link>
 
+          {/* Users Card */}
           <Link
             href="/admin/users"
             style={{
-              display: "block",
-              padding: "14px 16px",
-              borderRadius: 14,
-              border: "1px solid #2a2a2a",
-              background: "#101010",
-              color: "#a7f3d0",
-              fontSize: 18,
-              fontWeight: 900,
               textDecoration: "none",
+              color: "inherit",
             }}
           >
-            → Manage Users
+            <div
+              style={{
+                padding: 32,
+                borderRadius: 24,
+                background: "linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%)",
+                border: "1px solid rgba(167, 139, 250, 0.3)",
+                cursor: "pointer",
+                transition: "all 0.3s ease",
+                position: "relative",
+                overflow: "hidden",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "translateY(-4px)";
+                e.currentTarget.style.boxShadow = "0 20px 40px rgba(124, 58, 237, 0.4)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.boxShadow = "none";
+              }}
+            >
+              <div style={{ fontSize: 48, marginBottom: 16 }}>🔐</div>
+              <div style={{ fontSize: 28, fontWeight: 900, marginBottom: 8 }}>
+                Admin Users
+              </div>
+              <div style={{ fontSize: 14, opacity: 0.9 }}>
+                Manage admin accounts and permissions
+              </div>
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: 16,
+                  right: 16,
+                  fontSize: 32,
+                  opacity: 0.3,
+                }}
+              >
+                →
+              </div>
+            </div>
           </Link>
 
+          {/* Videos Card */}
           <Link
             href="/admin/videos"
             style={{
-              display: "block",
-              padding: "14px 16px",
-              borderRadius: 14,
-              border: "1px solid #2a2a2a",
-              background: "#101010",
-              color: "#fcd34d",
-              fontSize: 18,
-              fontWeight: 900,
               textDecoration: "none",
+              color: "inherit",
             }}
           >
-            → Manage Videos
+            <div
+              style={{
+                padding: 32,
+                borderRadius: 24,
+                background: "linear-gradient(135deg, #15803d 0%, #22c55e 100%)",
+                border: "1px solid rgba(34, 197, 94, 0.3)",
+                cursor: "pointer",
+                transition: "all 0.3s ease",
+                position: "relative",
+                overflow: "hidden",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "translateY(-4px)";
+                e.currentTarget.style.boxShadow = "0 20px 40px rgba(34, 197, 94, 0.4)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.boxShadow = "none";
+              }}
+            >
+              <div style={{ fontSize: 48, marginBottom: 16 }}>🎬</div>
+              <div style={{ fontSize: 28, fontWeight: 900, marginBottom: 8 }}>
+                Videos
+              </div>
+              <div style={{ fontSize: 14, opacity: 0.9 }}>
+                Upload and manage video content library
+              </div>
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: 16,
+                  right: 16,
+                  fontSize: 32,
+                  opacity: 0.3,
+                }}
+              >
+                →
+              </div>
+            </div>
           </Link>
         </div>
 
-        <div style={{ marginTop: 18, opacity: 0.85, fontSize: 14 }}>
-          Quick API checks:
-        </div>
-
-        <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-          <a
-            href="/api/admin/licensees"
-            style={{ color: "#a7f3d0", fontSize: 16 }}
-            target="_blank"
-            rel="noreferrer"
+        {/* Quick Stats */}
+        <div
+          style={{
+            marginTop: 60,
+            padding: 32,
+            borderRadius: 24,
+            background: "rgba(255, 255, 255, 0.03)",
+            border: "1px solid rgba(255, 255, 255, 0.1)",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 20,
+              fontWeight: 900,
+              marginBottom: 24,
+              opacity: 0.9,
+            }}
           >
-            → /api/admin/licensees
-          </a>
-
-          <a
-            href="/api/admin/videos"
-            style={{ color: "#a7f3d0", fontSize: 16 }}
-            target="_blank"
-            rel="noreferrer"
+            Quick Links
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+              gap: 16,
+            }}
           >
-            → /api/admin/videos
-          </a>
+            <Link
+              href="/admin/licensees"
+              style={{
+                padding: "16px 20px",
+                borderRadius: 12,
+                background: "rgba(59, 130, 246, 0.1)",
+                border: "1px solid rgba(59, 130, 246, 0.3)",
+                textDecoration: "none",
+                color: "#60a5fa",
+                fontWeight: 700,
+                textAlign: "center",
+                transition: "all 0.2s ease",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "rgba(59, 130, 246, 0.2)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "rgba(59, 130, 246, 0.1)";
+              }}
+            >
+              Manage Licensees
+            </Link>
 
-          <a
-            href="/api/admin/users"
-            style={{ color: "#a7f3d0", fontSize: 16 }}
-            target="_blank"
-            rel="noreferrer"
-          >
-            → /api/admin/users
-          </a>
+            <Link
+              href="/admin/videos"
+              style={{
+                padding: "16px 20px",
+                borderRadius: 12,
+                background: "rgba(34, 197, 94, 0.1)",
+                border: "1px solid rgba(34, 197, 94, 0.3)",
+                textDecoration: "none",
+                color: "#22c55e",
+                fontWeight: 700,
+                textAlign: "center",
+                transition: "all 0.2s ease",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "rgba(34, 197, 94, 0.2)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "rgba(34, 197, 94, 0.1)";
+              }}
+            >
+              Upload Videos
+            </Link>
+
+            <Link
+              href="/admin/users"
+              style={{
+                padding: "16px 20px",
+                borderRadius: 12,
+                background: "rgba(167, 139, 250, 0.1)",
+                border: "1px solid rgba(167, 139, 250, 0.3)",
+                textDecoration: "none",
+                color: "#a78bfa",
+                fontWeight: 700,
+                textAlign: "center",
+                transition: "all 0.2s ease",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "rgba(167, 139, 250, 0.2)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "rgba(167, 139, 250, 0.1)";
+              }}
+            >
+              Admin Users
+            </Link>
+          </div>
         </div>
       </div>
     </div>
