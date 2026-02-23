@@ -9,7 +9,7 @@ function getAdminSupabase() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
-  return createClient(url, key);
+  return createClient(url, key, { auth: { persistSession: false } });
 }
 
 function clean(v: unknown) {
@@ -24,18 +24,23 @@ export async function POST(request: Request) {
   const supabase = getAdminSupabase();
   if (!supabase) {
     return NextResponse.json(
-      { error: "Missing SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) or SUPABASE_SERVICE_ROLE_KEY" },
+      {
+        error:
+          "Missing SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) or SUPABASE_SERVICE_ROLE_KEY",
+      },
       { status: 500 }
     );
   }
 
   const body = await request.json().catch(() => ({}));
-  const pairing_code = clean((body as any).pairing_code);
+
+  // Accept either pair_code OR pairing_code from the device for convenience.
+  const pair_code = clean((body as any).pair_code || (body as any).pairing_code);
   const device_id = clean((body as any).device_id);
 
-  if (!pairing_code || !device_id) {
+  if (!pair_code || !device_id) {
     return NextResponse.json(
-      { error: "Missing pairing_code or device_id" },
+      { error: "Missing pair_code (or pairing_code) or device_id" },
       { status: 400 }
     );
   }
@@ -43,15 +48,17 @@ export async function POST(request: Request) {
   const { data: deviceRow, error: findErr } = await (supabase as any)
     .from("devices")
     .select("*")
-    .eq("pair_code", pairing_code)
+    .eq("pair_code", pair_code)
     .eq("active", true)
     .single();
 
   if (findErr || !deviceRow) {
-    return NextResponse.json(
-      { error: "Invalid pairing code" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Invalid pairing code" }, { status: 400 });
+  }
+
+  // 🚫 Block token issuance until admin approves the device
+  if (deviceRow.approved === false || deviceRow.status === "pending") {
+    return NextResponse.json({ error: "Device pending approval" }, { status: 403 });
   }
 
   const newToken = makeToken();
@@ -69,10 +76,7 @@ export async function POST(request: Request) {
     .single();
 
   if (error) {
-    return NextResponse.json(
-      { error: error.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
   return NextResponse.json({
