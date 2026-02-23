@@ -8,35 +8,26 @@ export const fetchCache = "force-no-store";
 
 async function requireAdminPage() {
   const supabase = await supabaseServer();
-
   const { data } = await supabase.auth.getUser();
   const user = data?.user;
-
   if (!user) redirect("/login?next=/admin/licensees");
-
   const { data: row } = await supabase
     .from("admin_users")
     .select("role, active")
     .eq("user_id", user.id)
     .maybeSingle();
-
   const role = String(row?.role || "");
   const active = row?.active !== false;
-
   if (!active || !role) redirect("/login?next=/admin/licensees");
-
   return { role, email: user.email ?? "" };
 }
 
 export default async function LicenseesAdminPage() {
   const { role, email } = await requireAdminPage();
-
   const adminKey = process.env.ADMIN_API_KEY;
-
   if (!adminKey) {
     throw new Error("ADMIN_API_KEY is not defined in environment variables.");
   }
-
   return (
     <div
       style={{
@@ -63,7 +54,6 @@ export default async function LicenseesAdminPage() {
               Logged in as <b>{email || "unknown"}</b> — role <b>{role}</b>
             </div>
           </div>
-
           <div
             style={{
               display: "flex",
@@ -82,7 +72,6 @@ export default async function LicenseesAdminPage() {
             >
               ← Admin Home
             </Link>
-
             <Link
               href="/admin/users"
               style={{
@@ -96,26 +85,8 @@ export default async function LicenseesAdminPage() {
           </div>
         </div>
 
-        <div
-          style={{
-            marginTop: 16,
-            padding: 14,
-            border: "1px solid #333",
-            borderRadius: 14,
-          }}
-        >
-          <div
-            style={{
-              fontSize: 14,
-              opacity: 0.85,
-              marginBottom: 10,
-            }}
-          >
-            Licensees management (powered by{" "}
-            <code>/api/admin/licensees</code>)
-          </div>
-
-          {/* 🔥 IMPORTANT: pass adminKey into client */}
+        {/* Client Component */}
+        <div style={{ marginTop: 16 }}>
           <LicenseesClient adminKey={adminKey} />
         </div>
       </div>
