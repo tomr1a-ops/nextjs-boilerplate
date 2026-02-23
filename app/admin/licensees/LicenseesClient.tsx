@@ -447,118 +447,161 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
         </div>
       )}
 
-      {/* Licensees Table */}
-      <div style={{ border: "1px solid #333", borderRadius: 14, overflow: "hidden" }}>
-        {/* Header row */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "2fr 1fr 1fr 1fr auto auto auto",
-            padding: "12px",
-            background: "#111",
-            gap: 0,
-            alignItems: "center",
-          }}
-        >
-          <div style={headerCell}>Name</div>
-          <div style={headerCell}>Code</div>
-          <div style={headerCell}>Status</div>
-          <div style={headerCell}>Created</div>
-          <div style={headerCell} />
-          <div style={headerCell} />
-          <div style={{ minWidth: 0 }} />
-        </div>
-
-        {/* Rows */}
-        {items.map((x) => {
-          const isActive = x.active ?? true;
-
-          return (
-            <div
-              key={x.id}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "2fr 1fr 1fr 1fr auto auto auto",
+          <div style={{ marginTop: 20 }}>
+        <table style={{ 
+          width: "100%", 
+          borderCollapse: "separate",
+          borderSpacing: 0,
+          border: "1px solid #333",
+          borderRadius: 14,
+          overflow: "hidden",
+        }}>
+          <thead>
+            <tr style={{ background: "#111" }}>
+              <th style={{ 
+                textAlign: "left", 
+                padding: "12px", 
+                fontWeight: 900, 
+                opacity: 0.9,
+                borderBottom: "1px solid #222",
+              }}>Name</th>
+              <th style={{ 
+                textAlign: "left", 
+                padding: "12px", 
+                fontWeight: 900, 
+                opacity: 0.9,
+                borderBottom: "1px solid #222",
+              }}>Code</th>
+              <th style={{ 
+                textAlign: "left", 
+                padding: "12px", 
+                fontWeight: 900, 
+                opacity: 0.9,
+                borderBottom: "1px solid #222",
+              }}>Status</th>
+              <th style={{ 
+                textAlign: "left", 
+                padding: "12px", 
+                fontWeight: 900, 
+                opacity: 0.9,
+                borderBottom: "1px solid #222",
+              }}>Created</th>
+              <th style={{ 
                 padding: "12px",
-                borderTop: "1px solid #222",
-                alignItems: "center",
-                gap: 0,
-                opacity: isActive ? 1 : 0.55,
-              }}
-            >
-              <div style={{ ...cell, fontWeight: 700 }}>{x.name || "—"}</div>
-
-              <div style={{ ...cell, opacity: 0.9, fontFamily: "ui-monospace, monospace" }}>{x.code || "—"}</div>
-
-              <div style={{ ...cell, fontWeight: 900, color: isActive ? "#22c55e" : "#f97316" }}>
-                {isActive ? "ACTIVE" : "INACTIVE"}
-              </div>
-
-              <div style={{ ...cell, opacity: 0.7 }}>{x.created_at ? new Date(x.created_at).toLocaleDateString() : "—"}</div>
-
-              <div style={cell}>
-                <button
-                  onClick={() => openEditModal(x)}
-                  disabled={loading}
-                  style={{
-                    padding: "8px 12px",
-                    borderRadius: 10,
-                    border: "1px solid #334155",
-                    background: "#0f172a",
-                    color: "#e2e8f0",
-                    fontWeight: 900,
-                    fontSize: 13,
-                    cursor: loading ? "not-allowed" : "pointer",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  Edit
-                </button>
-              </div>
-
-              <div style={cell}>
-                <button
-                  onClick={() => toggleActive(x)}
-                  disabled={loading}
-                  style={{
-                    padding: "8px 12px",
-                    borderRadius: 10,
-                    border: "1px solid #333",
-                    background: isActive ? "#111827" : "#7c2d12",
-                    color: "#fff",
-                    fontWeight: 900,
-                    fontSize: 13,
-                    cursor: loading ? "not-allowed" : "pointer",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {isActive ? "Deactivate" : "Activate"}
-                </button>
-              </div>
-
-              <div style={{ minWidth: 0 }}>
-                <button
-                  onClick={() => openVideosModal(x)}
-                  disabled={loading}
-                  style={{
-                    padding: "8px 12px",
-                    borderRadius: 10,
-                    border: "1px solid #1e40af",
-                    background: "#1e3a8a",
-                    color: "#e2e8f0",
-                    fontWeight: 900,
-                    fontSize: 13,
-                    cursor: loading ? "not-allowed" : "pointer",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  Videos
-                </button>
-              </div>
-            </div>
-          );
-        })}
-
+                borderBottom: "1px solid #222",
+              }}></th>
+              <th style={{ 
+                padding: "12px",
+                borderBottom: "1px solid #222",
+              }}></th>
+              <th style={{ 
+                padding: "12px",
+                borderBottom: "1px solid #222",
+              }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.length === 0 && !loading ? (
+              <tr>
+                <td colSpan={7} style={{ padding: 20, textAlign: "center", opacity: 0.7 }}>
+                  No licensees found. Click "New Licensee Onboarding" to add your first licensee.
+                </td>
+              </tr>
+            ) : (
+              items.map((x) => {
+                const isActive = x.active ?? true;
+                return (
+                  <tr 
+                    key={x.id} 
+                    style={{ 
+                      borderBottom: "1px solid #222",
+                      opacity: isActive ? 1 : 0.55,
+                    }}
+                  >
+                    <td style={{ padding: "12px", fontWeight: 700 }}>
+                      {x.name || "—"}
+                    </td>
+                    <td style={{ 
+                      padding: "12px", 
+                      opacity: 0.9, 
+                      fontFamily: "ui-monospace, monospace" 
+                    }}>
+                      {x.code || "—"}
+                    </td>
+                    <td style={{ 
+                      padding: "12px", 
+                      fontWeight: 900, 
+                      color: isActive ? "#22c55e" : "#f97316" 
+                    }}>
+                      {isActive ? "ACTIVE" : "INACTIVE"}
+                    </td>
+                    <td style={{ padding: "12px", opacity: 0.7 }}>
+                      {x.created_at ? new Date(x.created_at).toLocaleDateString() : "—"}
+                    </td>
+                    <td style={{ padding: "12px" }}>
+                      <button
+                        onClick={() => openEditModal(x)}
+                        disabled={loading}
+                        style={{
+                          padding: "8px 16px",
+                          borderRadius: 10,
+                          border: "1px solid #334155",
+                          background: "#0f172a",
+                          color: "#e2e8f0",
+                          fontWeight: 900,
+                          fontSize: 13,
+                          cursor: loading ? "not-allowed" : "pointer",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        Edit
+                      </button>
+                    </td>
+                    <td style={{ padding: "12px" }}>
+                      <button
+                        onClick={() => toggleActive(x)}
+                        disabled={loading}
+                        style={{
+                          padding: "8px 16px",
+                          borderRadius: 10,
+                          border: "1px solid #333",
+                          background: isActive ? "#111827" : "#7c2d12",
+                          color: "#fff",
+                          fontWeight: 900,
+                          fontSize: 13,
+                          cursor: loading ? "not-allowed" : "pointer",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {isActive ? "Deactivate" : "Activate"}
+                      </button>
+                    </td>
+                    <td style={{ padding: "12px" }}>
+                      <button
+                        onClick={() => openVideosModal(x)}
+                        disabled={loading}
+                        style={{
+                          padding: "8px 16px",
+                          borderRadius: 10,
+                          border: "1px solid #1e40af",
+                          background: "#1e3a8a",
+                          color: "#e2e8f0",
+                          fontWeight: 900,
+                          fontSize: 13,
+                          cursor: loading ? "not-allowed" : "pointer",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        Videos
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
         {items.length === 0 && !loading && (
           <div style={{ padding: 14, opacity: 0.7 }}>
             No licensees found. Click &quot;New Licensee Onboarding&quot; to add your first licensee.
