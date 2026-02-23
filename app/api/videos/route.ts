@@ -1,47 +1,131 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
-function json(status: number, body: any) {
-  return new NextResponse(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-  });
+function getAdminSupabase() {
+  const SUPABASE_URL =
+    process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
+  return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
-function requireAdminKey(req: Request) {
-  const got = req.headers.get("x-admin-key") || "";
-  const expected = process.env.ADMIN_API_KEY || "";
-  if (!expected) return { ok: false, error: "Server missing ADMIN_API_KEY" };
-  if (!got || got !== expected) return { ok: false, error: "Unauthorized" };
-  return { ok: true };
+// Get licensee ID from room code
+async function getLicenseeIdForRoom(
+  supabase: any,
+  room: string
+): Promise<string | null> {
+  // Try licensee_rooms first
+  const { data: roomData } = await supabase
+    .from("licensee_rooms")
+    .select("licensee_id")
+    .eq("room_id", room)
+    .maybeSingle();
+  
+  if (roomData?.licensee_id) return roomData.licensee_id;
+
+  // Fallback: treat room as licensee code
+  const { data: licenseeData } = await supabase
+    .from("licensees")
+    .select("id")
+    .eq("code", room)
+    .maybeSingle();
+
+  return licenseeData?.id || null;
 }
 
-function supabaseAdmin() {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("Server env missing");
-  return createClient(url, key, { auth: { persistSession: false } });
+// Check if licensee is active
+async function isLicenseeActive(
+  supabase: any,
+  licenseeId: string
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("licensees")
+    .select("active")
+    .eq("id", licenseeId)
+    .maybeSingle();
+
+  if (error) return false;
+  return data?.active !== false;
 }
 
-// GET /api/admin/videos - List all videos
-export async function GET(req: Request) {
-  const auth = requireAdminKey(req);
-  if (!auth.ok) return json(401, { error: auth.error });
+// GET /api/videos?room=AT100
+export async function GET(req: NextRequest) {
+  const supabase = getAdminSupabase();
+  if (!supabase) {
+    return NextResponse.json(
+      { error: "Missing Supabase configuration" },
+      { status: 500 }
+    );
+  }
+
+  const room = req.nextUrl.searchParams.get("room");
+  if (!room) {
+    return NextResponse.json({ error: "Missing room parameter" }, { status: 400 });
+  }
 
   try {
-    const supabase = supabaseAdmin();
+    // Get licensee ID
+    const licenseeId = await getLicenseeIdForRoom(supabase, room);
+    if (!licenseeId) {
+      return NextResponse.json(
+        { error: "Unauthorized" },
+        { status: 401 }
+      );
+    }
 
-    const { data, error } = await supabase
+    // Check if licensee is active
+    const active = await isLicenseeActive(supabase, licenseeId);
+    if (!active) {
+      return NextResponse.json(
+        { error: "License inactive" },
+        { status: 403 }
+      );
+    }
+
+    // Get allowed video labels for this licensee
+    const { data: allowedLabels, error: labelsError } = await supabase
+      .from("licensee_video_access")
+      .select("video_label")
+      .eq("licensee_id", licenseeId);
+
+    if (labelsError) {
+      return NextResponse.json(
+        { error: labelsError.message },
+        { status: 500 }
+      );
+    }
+
+    const labels = (allowedLabels || [])
+      .map((x: any) => x.video_label)
+      .filter(Boolean);
+
+    if (labels.length === 0) {
+      return NextResponse.json({ videos: [] });
+    }
+
+    // Get video details for allowed labels
+    const { data: videos, error: videosError } = await supabase
       .from("videos")
       .select("id, label, playback_id, sort_order, active, created_at")
+      .in("label", labels)
+      .eq("active", true)
       .order("sort_order", { ascending: true });
 
-    if (error) return json(500, { error: error.message });
-    return json(200, { videos: data || [] });
+    if (videosError) {
+      return NextResponse.json(
+        { error: videosError.message },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ videos: videos || [] });
   } catch (e: any) {
-    return json(500, { error: e?.message || "Server error" });
+    return NextResponse.json(
+      { error: e?.message || "Server error" },
+      { status: 500 }
+    );
   }
 }
