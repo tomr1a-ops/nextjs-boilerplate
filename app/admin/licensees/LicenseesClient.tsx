@@ -450,7 +450,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "2fr 1fr 1fr 1fr auto auto auto auto",
+            gridTemplateColumns: "2fr 1fr 1fr 1fr auto auto auto",
             gap: 0,
             padding: 12,
             background: "#111",
@@ -463,7 +463,6 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
           <div style={{ fontWeight: 900, opacity: 0.9 }}>Created</div>
           <div />
           <div />
-          <div />
         </div>
 
         {items.map((x) => {
@@ -474,7 +473,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
               key={x.id}
               style={{
                 display: "grid",
-                gridTemplateColumns: "2fr 1fr 1fr 1fr auto auto auto auto",
+                gridTemplateColumns: "2fr 1fr 1fr 1fr auto auto auto",
                 padding: 12,
                 borderTop: "1px solid #222",
                 alignItems: "center",
@@ -550,23 +549,6 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                 }}
               >
                 Videos
-              </button>
-
-              <button
-                onClick={() => deleteLicensee(x.id)}
-                disabled={loading}
-                style={{
-                  padding: "8px 12px",
-                  borderRadius: 10,
-                  border: "1px solid #7f1d1d",
-                  background: "#991b1b",
-                  color: "#fff",
-                  fontWeight: 900,
-                  fontSize: 13,
-                  cursor: loading ? "not-allowed" : "pointer",
-                }}
-              >
-                Delete
               </button>
             </div>
           );
@@ -842,42 +824,68 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
               </div>
 
               {/* Buttons */}
-              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 10 }}>
-                <button
-                  onClick={() => {
-                    setShowOnboardingModal(false);
-                    setEditingLicensee(null);
-                  }}
-                  disabled={loading}
-                  style={{
-                    padding: "12px 24px",
-                    borderRadius: 12,
-                    border: "1px solid #333",
-                    background: "#1b1b1b",
-                    color: "#fff",
-                    fontWeight: 800,
-                    cursor: loading ? "not-allowed" : "pointer",
-                  }}
-                >
-                  Cancel
-                </button>
+              <div style={{ display: "flex", gap: 10, justifyContent: "space-between", marginTop: 10 }}>
+                <div>
+                  {editingLicensee && (
+                    <button
+                      onClick={() => {
+                        deleteLicensee(editingLicensee.id);
+                        setShowOnboardingModal(false);
+                        setEditingLicensee(null);
+                      }}
+                      disabled={loading}
+                      style={{
+                        padding: "12px 24px",
+                        borderRadius: 12,
+                        border: "1px solid #7f1d1d",
+                        background: "#991b1b",
+                        color: "#fff",
+                        fontWeight: 800,
+                        cursor: loading ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      Delete Licensee
+                    </button>
+                  )}
+                </div>
 
-                <button
-                  onClick={editingLicensee ? saveEdit : submitOnboarding}
-                  disabled={loading || !onboardingForm.licensee_name.trim() || !onboardingForm.name.trim()}
-                  style={{
-                    padding: "12px 32px",
-                    borderRadius: 12,
-                    border: "2px solid #1f4d2a",
-                    background: loading || !onboardingForm.licensee_name.trim() || !onboardingForm.name.trim() ? "#14532d" : "#22c55e",
-                    color: "#000",
-                    fontWeight: 900,
-                    fontSize: 16,
-                    cursor: loading || !onboardingForm.licensee_name.trim() || !onboardingForm.name.trim() ? "not-allowed" : "pointer",
-                  }}
-                >
-                  {loading ? (editingLicensee ? "Saving..." : "Creating...") : (editingLicensee ? "Save Changes" : "Create Licensee")}
-                </button>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button
+                    onClick={() => {
+                      setShowOnboardingModal(false);
+                      setEditingLicensee(null);
+                    }}
+                    disabled={loading}
+                    style={{
+                      padding: "12px 24px",
+                      borderRadius: 12,
+                      border: "1px solid #333",
+                      background: "#1b1b1b",
+                      color: "#fff",
+                      fontWeight: 800,
+                      cursor: loading ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    onClick={editingLicensee ? saveEdit : submitOnboarding}
+                    disabled={loading || !onboardingForm.licensee_name.trim() || !onboardingForm.name.trim()}
+                    style={{
+                      padding: "12px 32px",
+                      borderRadius: 12,
+                      border: "2px solid #1f4d2a",
+                      background: loading || !onboardingForm.licensee_name.trim() || !onboardingForm.name.trim() ? "#14532d" : "#22c55e",
+                      color: "#000",
+                      fontWeight: 900,
+                      fontSize: 16,
+                      cursor: loading || !onboardingForm.licensee_name.trim() || !onboardingForm.name.trim() ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    {loading ? (editingLicensee ? "Saving..." : "Creating...") : (editingLicensee ? "Save Changes" : "Create Licensee")}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
