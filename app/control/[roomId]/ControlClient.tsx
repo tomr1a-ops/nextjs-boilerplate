@@ -12,6 +12,13 @@ type VideoRow = {
   created_at?: string;
 };
 
+type SessionData = {
+  state: string;
+  playback_id?: string | null;
+  started_at?: string | null;
+  paused_at?: string | null;
+};
+
 function clean(input: any) {
   return (input ?? "")
     .toString()
@@ -41,13 +48,20 @@ export default function ControlClient({ roomId }: { roomId: string }) {
     return { raw: "", clean: "", source: "none" as const };
   }, [roomId, params?.roomId]);
 
-  const rid = derived.clean; // cleaned version used by session endpoints
-  const code = (rid || "").toUpperCase(); // licensee code for /api/player/videos?code=
+  const rid = derived.clean;
+  const code = (rid || "").toUpperCase();
 
   const [videos, setVideos] = useState<VideoRow[]>([]);
   const [err, setErr] = useState("");
-  const [state, setState] = useState<string>("unknown");
+  const [sessionData, setSessionData] = useState<SessionData>({ state: "unknown" });
   const [loading, setLoading] = useState(true);
+  const [clickedVideo, setClickedVideo] = useState<string | null>(null);
+
+  // Find currently playing video
+  const currentVideo = useMemo(() => {
+    if (!sessionData.playback_id) return null;
+    return videos.find(v => v.playback_id === sessionData.playback_id || v.label === sessionData.playback_id);
+  }, [sessionData.playback_id, videos]);
 
   async function loadVideos() {
     if (!code) return;
@@ -55,25 +69,23 @@ export default function ControlClient({ roomId }: { roomId: string }) {
     setLoading(true);
 
     try {
-  const res = await fetch(`/api/videos?room=${encodeURIComponent(rid)}&t=${Date.now()}`, {
-  cache: "no-store",
-});
+      const res = await fetch(`/api/videos?room=${encodeURIComponent(rid)}&t=${Date.now()}`, {
+        cache: "no-store",
+      });
 
-const json = await res.json().catch(() => null);
+      const json = await res.json().catch(() => null);
 
-// If license is inactive, API returns 403.
-// Show a clean message + hide buttons.
-if (res.status === 403) {
-  setVideos([]);
-  setErr("License inactive — no access. Reactivate in Admin → Licensees.");
-  return;
-}
+      if (res.status === 403) {
+        setVideos([]);
+        setErr("License inactive — no access. Reactivate in Admin → Licensees.");
+        return;
+      }
 
-if (!res.ok) {
-  throw new Error(json?.error || `Failed (${res.status})`);
-}
+      if (!res.ok) {
+        throw new Error(json?.error || `Failed (${res.status})`);
+      }
 
-setVideos(Array.isArray(json?.videos) ? json.videos : []);
+      setVideos(Array.isArray(json?.videos) ? json.videos : []);
     } catch (e: any) {
       setErr(e?.message || "Failed to load videos");
       setVideos([]);
@@ -89,7 +101,14 @@ setVideos(Array.isArray(json?.videos) ? json.videos : []);
         cache: "no-store",
       });
       const json = await res.json().catch(() => null);
-      if (res.ok) setState(String(json?.state || "unknown"));
+      if (res.ok) {
+        setSessionData({
+          state: String(json?.state || "unknown"),
+          playback_id: json?.playback_id || null,
+          started_at: json?.started_at || null,
+          paused_at: json?.paused_at || null,
+        });
+      }
     } catch {
       // ignore
     }
@@ -112,14 +131,14 @@ setVideos(Array.isArray(json?.videos) ? json.videos : []);
   }
 
   async function playVideo(v: VideoRow) {
+    setClickedVideo(v.label);
     try {
-      // Prefer playback_id if present; otherwise fall back to label
       const payloadPlayback = v.playback_id || v.label;
 
       await postSession({
         state: "playing",
         playback_id: payloadPlayback,
-        label: v.label, // optional, helpful for debugging/logs
+        label: v.label,
         started_at: new Date().toISOString(),
         paused_at: null,
       });
@@ -127,6 +146,8 @@ setVideos(Array.isArray(json?.videos) ? json.videos : []);
       await loadState();
     } catch (e: any) {
       setErr(e?.message || "Play failed");
+    } finally {
+      setTimeout(() => setClickedVideo(null), 300);
     }
   }
 
@@ -166,6 +187,8 @@ setVideos(Array.isArray(json?.videos) ? json.videos : []);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rid]);
 
+  const state = sessionData.state;
+
   return (
     <div style={{ minHeight: "100vh", background: "#000", color: "#fff", padding: 18 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
@@ -178,13 +201,46 @@ setVideos(Array.isArray(json?.videos) ? json.videos : []);
             padding: "10px 14px",
             borderRadius: 999,
             border: "1px solid rgba(255,255,255,0.18)",
-            background: "rgba(255,255,255,0.06)",
+            background: state === "playing" 
+              ? "rgba(34, 197, 94, 0.2)" 
+              : state === "paused"
+              ? "rgba(251, 191, 36, 0.2)"
+              : "rgba(255,255,255,0.06)",
             fontWeight: 900,
+            color: state === "playing" 
+              ? "#22c55e" 
+              : state === "paused"
+              ? "#fbbf24"
+              : "#fff",
           }}
         >
           State: {state}
         </div>
       </div>
+
+      {/* Currently Playing Banner */}
+      {currentVideo && state === "playing" && (
+        <div
+          style={{
+            marginTop: 16,
+            padding: "16px 20px",
+            borderRadius: 16,
+            border: "2px solid #22c55e",
+            background: "rgba(34, 197, 94, 0.1)",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
+          <div style={{ fontSize: 24 }}>▶</div>
+          <div>
+            <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 4 }}>NOW PLAYING</div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: "#22c55e" }}>
+              {currentVideo.label}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={{ marginTop: 10, fontSize: 12, opacity: 0.75 }}>
         Raw prop: <span style={{ fontFamily: "monospace" }}>{String(roomId)}</span> • Derived:{" "}
@@ -304,24 +360,37 @@ setVideos(Array.isArray(json?.videos) ? json.videos : []);
         </div>
       ) : (
         <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 10 }}>
-          {videos.map((v) => (
-            <button
-              key={v.label}
-              onClick={() => playVideo(v)}
-              style={{
-                padding: "14px 10px",
-                borderRadius: 14,
-                border: "1px solid #1f1f1f",
-                background: "#39d353",
-                color: "#000",
-                fontWeight: 900,
-                textAlign: "center",
-                cursor: "pointer",
-              }}
-            >
-              {v.label}
-            </button>
-          ))}
+          {videos.map((v) => {
+            const isPlaying = currentVideo?.label === v.label && state === "playing";
+            const isClicked = clickedVideo === v.label;
+            
+            return (
+              <button
+                key={v.label}
+                onClick={() => playVideo(v)}
+                style={{
+                  padding: "14px 10px",
+                  borderRadius: 14,
+                  border: isPlaying ? "3px solid #22c55e" : "1px solid #1f1f1f",
+                  background: isPlaying 
+                    ? "#22c55e"
+                    : isClicked
+                    ? "#2dd44c"
+                    : "#39d353",
+                  color: "#000",
+                  fontWeight: 900,
+                  textAlign: "center",
+                  cursor: "pointer",
+                  transform: isClicked ? "scale(0.95)" : "scale(1)",
+                  transition: "all 0.1s ease",
+                  boxShadow: isPlaying ? "0 0 20px rgba(34, 197, 94, 0.5)" : "none",
+                }}
+              >
+                {isPlaying && "▶ "}
+                {v.label}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
