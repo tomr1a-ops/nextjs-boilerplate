@@ -1023,19 +1023,8 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                             fontWeight: 900, 
                             fontSize: 16,
                             color: checked[label] ? "#22c55e" : "#fff",
-                            marginBottom: 4,
                           }}>
                             {v.label || v.id}
-                          </div>
-                          <div style={{ 
-                            opacity: 0.6, 
-                            fontSize: 11, 
-                            fontFamily: "ui-monospace, monospace",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}>
-                            {v.playback_id ? `${v.playback_id.substring(0, 20)}...` : "—"}
                           </div>
                         </div>
                       </label>
