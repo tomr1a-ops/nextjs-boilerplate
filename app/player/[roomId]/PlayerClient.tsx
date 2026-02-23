@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Hls from "hls.js";
 
 type SessionData = {
   state: string;
@@ -21,7 +20,6 @@ type Video = {
 
 export default function PlayerClient({ code }: { code: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const hlsRef = useRef<Hls | null>(null);
   const [session, setSession] = useState<SessionData | null>(null);
   const [videos, setVideos] = useState<Video[]>([]);
   const [currentVideo, setCurrentVideo] = useState<Video | null>(null);
@@ -63,48 +61,6 @@ export default function PlayerClient({ code }: { code: string }) {
     }
   }
 
-  // Initialize HLS player
-  function initPlayer(playbackId: string) {
-    const video = videoRef.current;
-    if (!video) return;
-
-    // Clean up existing HLS instance
-    if (hlsRef.current) {
-      hlsRef.current.destroy();
-      hlsRef.current = null;
-    }
-
-    const src = `https://stream.mux.com/${playbackId}.m3u8`;
-
-    if (Hls.isSupported()) {
-      const hls = new Hls({
-        enableWorker: true,
-        lowLatencyMode: true,
-      });
-      
-      hls.loadSource(src);
-      hls.attachMedia(video);
-      
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        video.play().catch(e => console.error("Play error:", e));
-      });
-
-      hls.on(Hls.Events.ERROR, (event, data) => {
-        if (data.fatal) {
-          console.error("HLS fatal error:", data);
-        }
-      });
-
-      hlsRef.current = hls;
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      // Native HLS support (Safari)
-      video.src = src;
-      video.addEventListener('loadedmetadata', () => {
-        video.play().catch(e => console.error("Play error:", e));
-      });
-    }
-  }
-
   // Handle session state changes
   useEffect(() => {
     if (!session || !videoRef.current) return;
@@ -119,10 +75,14 @@ export default function PlayerClient({ code }: { code: string }) {
 
     // Handle state changes
     if (state === "playing" && playback_id) {
+      const newPlaybackId = videoInfo?.playback_id || playback_id;
+      
       // New video or different video
-      if (!currentVideo || currentVideo.playback_id !== (videoInfo?.playback_id || playback_id)) {
-        setCurrentVideo(videoInfo || { label: playback_id, playback_id: playback_id });
-        initPlayer(videoInfo?.playback_id || playback_id);
+      if (!currentVideo || currentVideo.playback_id !== newPlaybackId) {
+        setCurrentVideo(videoInfo || { label: playback_id, playback_id: newPlaybackId });
+        video.src = `https://stream.mux.com/${newPlaybackId}.m3u8`;
+        video.load();
+        video.play().catch(e => console.error("Play error:", e));
       } else {
         // Same video, just resume
         video.play().catch(e => console.error("Play error:", e));
@@ -154,15 +114,6 @@ export default function PlayerClient({ code }: { code: string }) {
     const interval = setInterval(pollSession, 1000);
     return () => clearInterval(interval);
   }, [code]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-      }
-    };
-  }, []);
 
   const state = session?.state || "unknown";
   const isPlaying = state === "playing";
@@ -246,6 +197,7 @@ export default function PlayerClient({ code }: { code: string }) {
             objectFit: "contain",
           }}
           playsInline
+          controls
         />
       </div>
 
