@@ -26,7 +26,7 @@ function supabaseAdmin() {
   return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
 }
 
-// GET /api/admin/users - List all admin users
+// GET /api/admin/users
 export async function GET(req: NextRequest) {
   const auth = requireAdminKey(req);
   if (!auth.ok) return json(401, { error: auth.error });
@@ -36,31 +36,18 @@ export async function GET(req: NextRequest) {
 
     const { data, error } = await supabase
       .from("admin_users")
-      .select("id, user_id, role, active, created_at")
+      .select("id, user_id, email, role, active, created_at")
       .order("created_at", { ascending: false });
 
     if (error) return json(500, { error: error.message });
 
-    // Get emails from auth.users
-    const usersWithEmails = await Promise.all(
-      (data || []).map(async (adminUser) => {
-        if (!adminUser.user_id) return { ...adminUser, email: null };
-        
-        const { data: authUser } = await supabase.auth.admin.getUserById(adminUser.user_id);
-        return {
-          ...adminUser,
-          email: authUser?.user?.email || null,
-        };
-      })
-    );
-
-    return json(200, { users: usersWithEmails });
+    return json(200, { users: data || [] });
   } catch (e: any) {
     return json(500, { error: e?.message || "Server error" });
   }
 }
 
-// POST /api/admin/users - Create new admin user
+// POST /api/admin/users
 export async function POST(req: NextRequest) {
   const auth = requireAdminKey(req);
   if (!auth.ok) return json(401, { error: auth.error });
@@ -81,47 +68,46 @@ export async function POST(req: NextRequest) {
       return json(400, { error: "Invalid role" });
     }
 
-    // Create user in Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
       email,
       password,
-      email_confirm: true, // Auto-confirm email
+      email_confirm: true,
     });
 
-    if (authError) return json(400, { error: authError.message });
-    if (!authData.user) return json(500, { error: "User creation failed" });
+    if (authError) {
+      console.error("Auth creation error:", authError);
+      return json(400, { error: `Auth error: ${authError.message}` });
+    }
+    if (!authData.user) {
+      console.error("No user data returned from auth");
+      return json(500, { error: "User creation failed - no user data returned" });
+    }
 
-    // Create admin_users entry
     const { data: adminUser, error: adminError } = await supabase
       .from("admin_users")
       .insert([
         {
           user_id: authData.user.id,
+          email: authData.user.email,
           role,
           active: true,
         },
       ])
-      .select("id, user_id, role, active, created_at")
+      .select("id, user_id, email, role, active, created_at")
       .single();
 
     if (adminError) {
-      // Rollback: delete auth user if admin_users insert fails
       await supabase.auth.admin.deleteUser(authData.user.id);
       return json(500, { error: adminError.message });
     }
 
-    return json(200, { 
-      user: {
-        ...adminUser,
-        email: authData.user.email,
-      }
-    });
+    return json(200, { user: adminUser });
   } catch (e: any) {
     return json(500, { error: e?.message || "Server error" });
   }
 }
 
-// PATCH /api/admin/users?id=UUID - Update admin user
+// PATCH /api/admin/users?id=UUID
 export async function PATCH(req: NextRequest) {
   const auth = requireAdminKey(req);
   if (!auth.ok) return json(401, { error: auth.error });
@@ -155,26 +141,18 @@ export async function PATCH(req: NextRequest) {
       .from("admin_users")
       .update(updateData)
       .eq("id", id)
-      .select("id, user_id, role, active, created_at")
+      .select("id, user_id, email, role, active, created_at")
       .single();
 
     if (error) return json(500, { error: error.message });
 
-    // Get email
-    const { data: authUser } = await supabase.auth.admin.getUserById(data.user_id);
-
-    return json(200, { 
-      user: {
-        ...data,
-        email: authUser?.user?.email || null,
-      }
-    });
+    return json(200, { user: data });
   } catch (e: any) {
     return json(500, { error: e?.message || "Server error" });
   }
 }
 
-// DELETE /api/admin/users?id=UUID - Delete admin user
+// DELETE /api/admin/users?id=UUID
 export async function DELETE(req: NextRequest) {
   const auth = requireAdminKey(req);
   if (!auth.ok) return json(401, { error: auth.error });
@@ -186,7 +164,6 @@ export async function DELETE(req: NextRequest) {
 
     if (!id) return json(400, { error: "Missing id" });
 
-    // Get user_id before deleting
     const { data: adminUser } = await supabase
       .from("admin_users")
       .select("user_id")
@@ -195,7 +172,6 @@ export async function DELETE(req: NextRequest) {
 
     if (!adminUser) return json(404, { error: "User not found" });
 
-    // Delete from admin_users
     const { error: deleteError } = await supabase
       .from("admin_users")
       .delete()
@@ -203,7 +179,6 @@ export async function DELETE(req: NextRequest) {
 
     if (deleteError) return json(500, { error: deleteError.message });
 
-    // Delete from auth.users
     if (adminUser.user_id) {
       await supabase.auth.admin.deleteUser(adminUser.user_id);
     }
