@@ -18,7 +18,7 @@ type Video = {
   playback_id: string;
 };
 
-export default function PlayerClient({ code }: { code: string }) {
+export default function PlayerClient({ roomId }: { roomId: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [session, setSession] = useState<SessionData | null>(null);
   const [videos, setVideos] = useState<Video[]>([]);
@@ -26,6 +26,7 @@ export default function PlayerClient({ code }: { code: string }) {
   const [err, setErr] = useState("");
   const [lastCommandId, setLastCommandId] = useState(0);
 
+  const code = roomId;
   const codeUpper = code.toUpperCase();
 
   // Load available videos
