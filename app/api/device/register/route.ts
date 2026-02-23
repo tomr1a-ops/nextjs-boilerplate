@@ -43,7 +43,7 @@ export async function POST(request: Request) {
   const { data: deviceRow, error: findErr } = await (supabase as any)
     .from("devices")
     .select("*")
-    .eq("pairing_code", pairing_code)
+    .eq("pair_code", pairing_code)
     .eq("active", true)
     .single();
 
