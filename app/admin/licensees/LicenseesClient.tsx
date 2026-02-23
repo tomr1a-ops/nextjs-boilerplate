@@ -974,9 +974,9 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
 
             <div style={{ marginTop: 14, borderTop: "1px solid #222", paddingTop: 12 }}>
               {allVideos.length === 0 ? (
-                <div style={{ opacity: 0.8 }}>No videos found.</div>
+                <div style={{ opacity: 0.8 }}>No videos found. Upload videos in the Videos tab first.</div>
               ) : (
-                <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
+                <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}>
                   {allVideos.map((v) => {
                     const label = normLabel(v.label);
                     if (!label) return null;
@@ -986,13 +986,24 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                         key={v.id}
                         style={{
                           display: "flex",
-                          alignItems: "center",
+                          alignItems: "flex-start",
                           gap: 10,
-                          padding: 12,
-                          border: "1px solid #222",
+                          padding: 14,
+                          border: checked[label] ? "2px solid #22c55e" : "1px solid #333",
                           borderRadius: 12,
-                          background: "#0f0f0f",
+                          background: checked[label] ? "#0a1f14" : "#0f0f0f",
                           cursor: "pointer",
+                          transition: "all 0.2s ease",
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!checked[label]) {
+                            e.currentTarget.style.borderColor = "#555";
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!checked[label]) {
+                            e.currentTarget.style.borderColor = "#333";
+                          }
                         }}
                       >
                         <input
@@ -1000,12 +1011,31 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                           checked={!!checked[label]}
                           onChange={() => toggleVideo(label)}
                           disabled={savingVideos}
-                          style={{ width: 18, height: 18 }}
+                          style={{ 
+                            width: 20, 
+                            height: 20,
+                            marginTop: 2,
+                            cursor: savingVideos ? "not-allowed" : "pointer",
+                          }}
                         />
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontWeight: 900 }}>{v.label || v.id}</div>
-                          <div style={{ opacity: 0.75, marginTop: 4, fontSize: 12, wordBreak: "break-all" }}>
-                            {v.playback_id || "—"}
+                          <div style={{ 
+                            fontWeight: 900, 
+                            fontSize: 16,
+                            color: checked[label] ? "#22c55e" : "#fff",
+                            marginBottom: 4,
+                          }}>
+                            {v.label || v.id}
+                          </div>
+                          <div style={{ 
+                            opacity: 0.6, 
+                            fontSize: 11, 
+                            fontFamily: "ui-monospace, monospace",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}>
+                            {v.playback_id ? `${v.playback_id.substring(0, 20)}...` : "—"}
                           </div>
                         </div>
                       </label>
