@@ -63,7 +63,7 @@ export default async function AdminPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+            gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))",
             gap: 24,
             marginBottom: 40,
           }}
@@ -93,46 +93,6 @@ export default async function AdminPage() {
               </div>
               <div style={{ fontSize: 14, opacity: 0.9 }}>
                 Manage licensees, assign videos, and control access
-              </div>
-              <div
-                style={{
-                  position: "absolute",
-                  bottom: 16,
-                  right: 16,
-                  fontSize: 32,
-                  opacity: 0.3,
-                }}
-              >
-                →
-              </div>
-            </div>
-          </Link>
-
-          {/* Users Card */}
-          <Link
-            href="/admin/users"
-            style={{
-              textDecoration: "none",
-              color: "inherit",
-            }}
-          >
-            <div
-              style={{
-                padding: 32,
-                borderRadius: 24,
-                background: "linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%)",
-                border: "1px solid rgba(167, 139, 250, 0.3)",
-                cursor: "pointer",
-                position: "relative",
-                overflow: "hidden",
-              }}
-            >
-              <div style={{ fontSize: 48, marginBottom: 16 }}>🔐</div>
-              <div style={{ fontSize: 28, fontWeight: 900, marginBottom: 8 }}>
-                Admin Users
-              </div>
-              <div style={{ fontSize: 14, opacity: 0.9 }}>
-                Manage admin accounts and permissions
               </div>
               <div
                 style={{
@@ -212,7 +172,7 @@ export default async function AdminPage() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+              gridTemplateColumns: "repeat(2, 1fr)",
               gap: 16,
             }}
           >
@@ -248,23 +208,6 @@ export default async function AdminPage() {
               }}
             >
               Upload Videos
-            </Link>
-
-            <Link
-              href="/admin/users"
-              style={{
-                padding: "16px 20px",
-                borderRadius: 12,
-                background: "rgba(167, 139, 250, 0.1)",
-                border: "1px solid rgba(167, 139, 250, 0.3)",
-                textDecoration: "none",
-                color: "#a78bfa",
-                fontWeight: 700,
-                textAlign: "center",
-                display: "block",
-              }}
-            >
-              Admin Users
             </Link>
           </div>
         </div>
