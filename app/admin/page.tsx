@@ -30,44 +30,7 @@ export default async function AdminPage() {
   const { role, email } = await requireAdminPage();
 
   return (
-    <>
-      <style jsx>{`
-        .hover-card {
-          transition: all 0.3s ease;
-        }
-        .hover-card:hover {
-          transform: translateY(-4px);
-          box-shadow: 0 20px 40px rgba(59, 130, 246, 0.4);
-        }
-        .hover-card-purple:hover {
-          box-shadow: 0 20px 40px rgba(124, 58, 237, 0.4);
-        }
-        .hover-card-green:hover {
-          box-shadow: 0 20px 40px rgba(34, 197, 94, 0.4);
-        }
-        .quick-link {
-          transition: all 0.2s ease;
-        }
-        .quick-link-blue {
-          background: rgba(59, 130, 246, 0.1);
-        }
-        .quick-link-blue:hover {
-          background: rgba(59, 130, 246, 0.2);
-        }
-        .quick-link-green {
-          background: rgba(34, 197, 94, 0.1);
-        }
-        .quick-link-green:hover {
-          background: rgba(34, 197, 94, 0.2);
-        }
-        .quick-link-purple {
-          background: rgba(167, 139, 250, 0.1);
-        }
-        .quick-link-purple:hover {
-          background: rgba(167, 139, 250, 0.2);
-        }
-      `}</style>
-      <div
+    <div
       style={{
         minHeight: "100vh",
         background: "linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%)",
@@ -114,7 +77,6 @@ export default async function AdminPage() {
             }}
           >
             <div
-              className="hover-card"
               style={{
                 padding: 32,
                 borderRadius: 24,
@@ -155,7 +117,6 @@ export default async function AdminPage() {
             }}
           >
             <div
-              className="hover-card hover-card-purple"
               style={{
                 padding: 32,
                 borderRadius: 24,
@@ -196,7 +157,6 @@ export default async function AdminPage() {
             }}
           >
             <div
-              className="hover-card hover-card-green"
               style={{
                 padding: 32,
                 borderRadius: 24,
@@ -258,10 +218,10 @@ export default async function AdminPage() {
           >
             <Link
               href="/admin/licensees"
-              className="quick-link quick-link-blue"
               style={{
                 padding: "16px 20px",
                 borderRadius: 12,
+                background: "rgba(59, 130, 246, 0.1)",
                 border: "1px solid rgba(59, 130, 246, 0.3)",
                 textDecoration: "none",
                 color: "#60a5fa",
@@ -275,10 +235,10 @@ export default async function AdminPage() {
 
             <Link
               href="/admin/videos"
-              className="quick-link quick-link-green"
               style={{
                 padding: "16px 20px",
                 borderRadius: 12,
+                background: "rgba(34, 197, 94, 0.1)",
                 border: "1px solid rgba(34, 197, 94, 0.3)",
                 textDecoration: "none",
                 color: "#22c55e",
@@ -292,10 +252,10 @@ export default async function AdminPage() {
 
             <Link
               href="/admin/users"
-              className="quick-link quick-link-purple"
               style={{
                 padding: "16px 20px",
                 borderRadius: 12,
+                background: "rgba(167, 139, 250, 0.1)",
                 border: "1px solid rgba(167, 139, 250, 0.3)",
                 textDecoration: "none",
                 color: "#a78bfa",
@@ -309,6 +269,6 @@ export default async function AdminPage() {
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }
