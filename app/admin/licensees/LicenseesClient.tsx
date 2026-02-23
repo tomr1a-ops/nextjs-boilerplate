@@ -453,15 +453,15 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
             gridTemplateColumns: "2fr 1fr 1fr 1fr auto auto auto",
             padding: "12px",
             background: "#111",
-            gap: 0,
+            columnGap: 12,
           }}
         >
-          <div style={{ fontWeight: 900, opacity: 0.9, paddingRight: 12 }}>Name</div>
-          <div style={{ fontWeight: 900, opacity: 0.9, paddingRight: 12 }}>Code</div>
-          <div style={{ fontWeight: 900, opacity: 0.9, paddingRight: 12 }}>Status</div>
-          <div style={{ fontWeight: 900, opacity: 0.9, paddingRight: 12 }}>Created</div>
-          <div style={{ paddingRight: 12 }} />
-          <div style={{ paddingRight: 12 }} />
+          <div style={{ fontWeight: 900, opacity: 0.9 }}>Name</div>
+          <div style={{ fontWeight: 900, opacity: 0.9 }}>Code</div>
+          <div style={{ fontWeight: 900, opacity: 0.9 }}>Status</div>
+          <div style={{ fontWeight: 900, opacity: 0.9 }}>Created</div>
+          <div />
+          <div />
           <div />
         </div>
 
@@ -477,83 +477,86 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                 padding: "12px",
                 borderTop: "1px solid #222",
                 alignItems: "center",
-                gap: 0,
+                columnGap: 12,
                 opacity: isActive ? 1 : 0.55,
               }}
             >
-              <div style={{ fontWeight: 700, paddingRight: 12 }}>{x.name || "—"}</div>
+              <div style={{ fontWeight: 700 }}>{x.name || "—"}</div>
 
               <div style={{ 
                 opacity: 0.9, 
                 fontFamily: "ui-monospace, monospace",
-                paddingRight: 12,
               }}>
                 {x.code || "—"}
               </div>
 
-              <div style={{ fontWeight: 900, color: isActive ? "#22c55e" : "#f97316", paddingRight: 12 }}>
+              <div style={{ fontWeight: 900, color: isActive ? "#22c55e" : "#f97316" }}>
                 {isActive ? "ACTIVE" : "INACTIVE"}
               </div>
 
-              <div style={{ opacity: 0.7, paddingRight: 12 }}>
+              <div style={{ opacity: 0.7 }}>
                 {x.created_at ? new Date(x.created_at).toLocaleDateString() : "—"}
               </div>
 
-              <button
-                onClick={() => openEditModal(x)}
-                disabled={loading}
-                style={{
-                  padding: "8px 12px",
-                  borderRadius: 10,
-                  border: "1px solid #334155",
-                  background: "#0f172a",
-                  color: "#e2e8f0",
-                  fontWeight: 900,
-                  fontSize: 13,
-                  cursor: loading ? "not-allowed" : "pointer",
-                  whiteSpace: "nowrap",
-                  marginRight: 8,
-                }}
-              >
-                Edit
-              </button>
+              <div>
+                <button
+                  onClick={() => openEditModal(x)}
+                  disabled={loading}
+                  style={{
+                    padding: "8px 12px",
+                    borderRadius: 10,
+                    border: "1px solid #334155",
+                    background: "#0f172a",
+                    color: "#e2e8f0",
+                    fontWeight: 900,
+                    fontSize: 13,
+                    cursor: loading ? "not-allowed" : "pointer",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Edit
+                </button>
+              </div>
 
-              <button
-                onClick={() => toggleActive(x)}
-                disabled={loading}
-                style={{
-                  padding: "8px 12px",
-                  borderRadius: 10,
-                  border: "1px solid #333",
-                  background: isActive ? "#111827" : "#7c2d12",
-                  color: "#fff",
-                  fontWeight: 900,
-                  fontSize: 13,
-                  cursor: loading ? "not-allowed" : "pointer",
-                  whiteSpace: "nowrap",
-                  marginRight: 8,
-                }}
-              >
-                {isActive ? "Deactivate" : "Activate"}
-              </button>
+              <div>
+                <button
+                  onClick={() => toggleActive(x)}
+                  disabled={loading}
+                  style={{
+                    padding: "8px 12px",
+                    borderRadius: 10,
+                    border: "1px solid #333",
+                    background: isActive ? "#111827" : "#7c2d12",
+                    color: "#fff",
+                    fontWeight: 900,
+                    fontSize: 13,
+                    cursor: loading ? "not-allowed" : "pointer",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {isActive ? "Deactivate" : "Activate"}
+                </button>
+              </div>
 
-              <button
-                onClick={() => openVideosModal(x)}
-                disabled={loading}
-                style={{
-                  padding: "8px 12px",
-                  borderRadius: 10,
-                  border: "1px solid #1e40af",
-                  background: "#1e3a8a",
-                  color: "#e2e8f0",
-                  fontWeight: 900,
-                  fontSize: 13,
-                  cursor: loading ? "not-allowed" : "pointer",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Videos
-              </button>
+              <div>
+                <button
+                  onClick={() => openVideosModal(x)}
+                  disabled={loading}
+                  style={{
+                    padding: "8px 12px",
+                    borderRadius: 10,
+                    border: "1px solid #1e40af",
+                    background: "#1e3a8a",
+                    color: "#e2e8f0",
+                    fontWeight: 900,
+                    fontSize: 13,
+                    cursor: loading ? "not-allowed" : "pointer",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Videos
+                </button>
+              </div>
             </div>
           );
         })}
