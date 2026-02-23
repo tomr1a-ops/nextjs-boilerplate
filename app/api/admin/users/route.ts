@@ -42,8 +42,6 @@ export async function GET(req: NextRequest) {
     if (error) return json(500, { error: error.message });
 
     // Get emails from auth.users
-    const userIds = (data || []).map((u) => u.user_id).filter(Boolean);
-    
     const usersWithEmails = await Promise.all(
       (data || []).map(async (adminUser) => {
         if (!adminUser.user_id) return { ...adminUser, email: null };
