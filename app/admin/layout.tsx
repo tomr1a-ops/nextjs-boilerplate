@@ -93,21 +93,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               </Link>
             </div>
           </div>
-
-          <Link
-            href="/"
-            style={{
-              color: "#bbb",
-              textDecoration: "none",
-              padding: "8px 10px",
-              borderRadius: 12,
-              border: "1px solid #2a2a2a",
-              background: "#141414",
-              fontWeight: 800,
-            }}
-          >
-            Home
-          </Link>
         </div>
 
         {/* Page Body */}
