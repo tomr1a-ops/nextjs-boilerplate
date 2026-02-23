@@ -48,6 +48,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
   // Onboarding modal state
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
   const [onboardingForm, setOnboardingForm] = useState({
+    licensee_name: "",
     name: "",
     company_name: "",
     email: "",
@@ -58,6 +59,9 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
     notes: "",
   });
   const [autoGenerateCode, setAutoGenerateCode] = useState(true);
+
+  // Edit modal state
+  const [editingLicensee, setEditingLicensee] = useState<Licensee | null>(null);
 
   // Video assignment modal state
   const [showVideosFor, setShowVideosFor] = useState<Licensee | null>(null);
@@ -111,6 +115,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
 
   function openOnboardingModal() {
     setOnboardingForm({
+      licensee_name: "",
       name: "",
       company_name: "",
       email: "",
@@ -124,7 +129,64 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
     setShowOnboardingModal(true);
   }
 
+  function openEditModal(licensee: Licensee) {
+    setOnboardingForm({
+      licensee_name: licensee.name || "",
+      name: licensee.name || "",
+      company_name: licensee.company_name || "",
+      email: licensee.email || "",
+      phone: licensee.phone || "",
+      code: licensee.code || "",
+      billing_address: licensee.billing_address || "",
+      contract_details: licensee.contract_details || "",
+      notes: licensee.notes || "",
+    });
+    setEditingLicensee(licensee);
+    setShowOnboardingModal(true);
+  }
+
+  async function saveEdit() {
+    if (!editingLicensee) return;
+
+    setErr("");
+    setLoading(true);
+
+    try {
+      const res = await fetch(`/api/admin/licensees?id=${encodeURIComponent(editingLicensee.id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...adminHeaders },
+        body: JSON.stringify({
+          name: onboardingForm.licensee_name.trim(),
+          company_name: onboardingForm.company_name.trim() || null,
+          email: onboardingForm.email.trim() || null,
+          phone: onboardingForm.phone.trim() || null,
+          billing_address: onboardingForm.billing_address.trim() || null,
+          contract_details: onboardingForm.contract_details.trim() || null,
+          notes: onboardingForm.notes.trim() || null,
+        }),
+      });
+
+      const out = await safeJson(res);
+      if (!out.ok) {
+        setErr(out.json?.error || out.text || `Update failed (${out.status})`);
+        return;
+      }
+
+      setEditingLicensee(null);
+      await refresh();
+    } catch (e: any) {
+      setErr(e?.message || "Update failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function submitOnboarding() {
+    if (!onboardingForm.licensee_name.trim()) {
+      setErr("Licensee name is required");
+      return;
+    }
+
     if (!onboardingForm.name.trim()) {
       setErr("Contact name is required");
       return;
@@ -144,7 +206,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
         method: "POST",
         headers: { "Content-Type": "application/json", ...adminHeaders },
         body: JSON.stringify({
-          name: onboardingForm.name.trim(),
+          name: onboardingForm.licensee_name.trim(),
           code: finalCode.toUpperCase(),
           email: onboardingForm.email.trim() || null,
           phone: onboardingForm.phone.trim() || null,
@@ -388,7 +450,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "2fr 1fr 1fr 1fr auto auto auto",
+            gridTemplateColumns: "2fr 1fr 1fr 1fr auto auto auto auto",
             gap: 0,
             padding: 12,
             background: "#111",
@@ -401,6 +463,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
           <div style={{ fontWeight: 900, opacity: 0.9 }}>Created</div>
           <div />
           <div />
+          <div />
         </div>
 
         {items.map((x) => {
@@ -411,7 +474,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
               key={x.id}
               style={{
                 display: "grid",
-                gridTemplateColumns: "2fr 1fr 1fr 1fr auto auto auto",
+                gridTemplateColumns: "2fr 1fr 1fr 1fr auto auto auto auto",
                 padding: 12,
                 borderTop: "1px solid #222",
                 alignItems: "center",
@@ -439,15 +502,33 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
               </div>
 
               <button
+                onClick={() => openEditModal(x)}
+                disabled={loading}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: 10,
+                  border: "1px solid #334155",
+                  background: "#0f172a",
+                  color: "#e2e8f0",
+                  fontWeight: 900,
+                  fontSize: 13,
+                  cursor: loading ? "not-allowed" : "pointer",
+                }}
+              >
+                Edit
+              </button>
+
+              <button
                 onClick={() => toggleActive(x)}
                 disabled={loading}
                 style={{
-                  padding: "10px 14px",
-                  borderRadius: 12,
+                  padding: "8px 12px",
+                  borderRadius: 10,
                   border: "1px solid #333",
                   background: isActive ? "#111827" : "#7c2d12",
                   color: "#fff",
                   fontWeight: 900,
+                  fontSize: 13,
                   cursor: loading ? "not-allowed" : "pointer",
                 }}
               >
@@ -458,12 +539,13 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                 onClick={() => openVideosModal(x)}
                 disabled={loading}
                 style={{
-                  padding: "10px 14px",
-                  borderRadius: 12,
+                  padding: "8px 12px",
+                  borderRadius: 10,
                   border: "1px solid #334155",
                   background: "#0f172a",
                   color: "#e2e8f0",
                   fontWeight: 900,
+                  fontSize: 13,
                   cursor: loading ? "not-allowed" : "pointer",
                 }}
               >
@@ -474,12 +556,13 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                 onClick={() => deleteLicensee(x.id)}
                 disabled={loading}
                 style={{
-                  padding: "10px 14px",
-                  borderRadius: 12,
+                  padding: "8px 12px",
+                  borderRadius: 10,
                   border: "1px solid #7f1d1d",
                   background: "#991b1b",
                   color: "#fff",
                   fontWeight: 900,
+                  fontSize: 13,
                   cursor: loading ? "not-allowed" : "pointer",
                 }}
               >
@@ -524,15 +607,38 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
             onClick={(e) => e.stopPropagation()}
           >
             <h2 style={{ margin: "0 0 20px 0", fontSize: 24, fontWeight: 900, color: "#22c55e" }}>
-              New Licensee Onboarding
+              {editingLicensee ? "Edit Licensee" : "New Licensee Onboarding"}
             </h2>
 
             <div style={{ display: "grid", gap: 16 }}>
-              {/* Row 1: Name, Company */}
+              {/* Row 0: Licensee Name (Business Name) */}
+              <div>
+                <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 700, opacity: 0.9 }}>
+                  Licensee Name <span style={{ color: "#ef4444" }}>*</span>
+                </label>
+                <input
+                  value={onboardingForm.licensee_name}
+                  onChange={(e) => setOnboardingForm({ ...onboardingForm, licensee_name: e.target.value })}
+                  placeholder="Atlanta Fitness Studio 1"
+                  style={{
+                    width: "100%",
+                    padding: "12px 14px",
+                    borderRadius: 12,
+                    border: "1px solid #333",
+                    background: "#0f0f0f",
+                    color: "#fff",
+                    outline: "none",
+                    fontSize: 16,
+                    fontWeight: 700,
+                  }}
+                />
+              </div>
+
+              {/* Row 1: Contact Name, Company */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div>
                   <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 700, opacity: 0.9 }}>
-                    Contact Name <span style={{ color: "#ef4444" }}>*</span>
+                    Contact Person Name <span style={{ color: "#ef4444" }}>*</span>
                   </label>
                   <input
                     value={onboardingForm.name}
@@ -552,12 +658,12 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
 
                 <div>
                   <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 700, opacity: 0.9 }}>
-                    Company Name
+                    Company Name (Optional)
                   </label>
                   <input
                     value={onboardingForm.company_name}
                     onChange={(e) => setOnboardingForm({ ...onboardingForm, company_name: e.target.value })}
-                    placeholder="Acme Fitness"
+                    placeholder="Acme Fitness LLC"
                     style={{
                       width: "100%",
                       padding: "12px 14px",
@@ -616,50 +722,52 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                 </div>
               </div>
 
-              {/* Row 3: Code */}
-              <div>
-                <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 700, opacity: 0.9 }}>
-                  Licensee Code {!autoGenerateCode && <span style={{ color: "#ef4444" }}>*</span>}
-                </label>
-                <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
-                  <input
-                    value={autoGenerateCode ? generateNextCode() : onboardingForm.code}
-                    onChange={(e) => setOnboardingForm({ ...onboardingForm, code: e.target.value })}
-                    placeholder="LIC001"
-                    disabled={autoGenerateCode}
-                    style={{
-                      width: "100%",
+              {/* Row 3: Code (only show when creating, not editing) */}
+              {!editingLicensee && (
+                <div>
+                  <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 700, opacity: 0.9 }}>
+                    Licensee Code {!autoGenerateCode && <span style={{ color: "#ef4444" }}>*</span>}
+                  </label>
+                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
+                    <input
+                      value={autoGenerateCode ? generateNextCode() : onboardingForm.code}
+                      onChange={(e) => setOnboardingForm({ ...onboardingForm, code: e.target.value })}
+                      placeholder="LIC001"
+                      disabled={autoGenerateCode}
+                      style={{
+                        width: "100%",
+                        padding: "12px 14px",
+                        borderRadius: 12,
+                        border: "1px solid #333",
+                        background: autoGenerateCode ? "#1a1a1a" : "#0f0f0f",
+                        color: "#fff",
+                        fontFamily: "ui-monospace, monospace",
+                        fontWeight: 700,
+                        opacity: autoGenerateCode ? 0.7 : 1,
+                        outline: "none",
+                      }}
+                    />
+                    <label style={{ 
+                      display: "flex", 
+                      alignItems: "center", 
+                      gap: 8, 
+                      cursor: "pointer",
                       padding: "12px 14px",
                       borderRadius: 12,
                       border: "1px solid #333",
-                      background: autoGenerateCode ? "#1a1a1a" : "#0f0f0f",
-                      color: "#fff",
-                      fontFamily: "ui-monospace, monospace",
-                      fontWeight: 700,
-                      opacity: autoGenerateCode ? 0.7 : 1,
-                      outline: "none",
-                    }}
-                  />
-                  <label style={{ 
-                    display: "flex", 
-                    alignItems: "center", 
-                    gap: 8, 
-                    cursor: "pointer",
-                    padding: "12px 14px",
-                    borderRadius: 12,
-                    border: "1px solid #333",
-                    background: "#0f0f0f",
-                  }}>
-                    <input
-                      type="checkbox"
-                      checked={autoGenerateCode}
-                      onChange={(e) => setAutoGenerateCode(e.target.checked)}
-                      style={{ width: 18, height: 18 }}
-                    />
-                    <span style={{ fontSize: 14, fontWeight: 700 }}>Auto-generate</span>
-                  </label>
+                      background: "#0f0f0f",
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={autoGenerateCode}
+                        onChange={(e) => setAutoGenerateCode(e.target.checked)}
+                        style={{ width: 18, height: 18 }}
+                      />
+                      <span style={{ fontSize: 14, fontWeight: 700 }}>Auto-generate</span>
+                    </label>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Row 4: Billing Address */}
               <div>
@@ -736,7 +844,10 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
               {/* Buttons */}
               <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 10 }}>
                 <button
-                  onClick={() => setShowOnboardingModal(false)}
+                  onClick={() => {
+                    setShowOnboardingModal(false);
+                    setEditingLicensee(null);
+                  }}
                   disabled={loading}
                   style={{
                     padding: "12px 24px",
@@ -752,20 +863,20 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                 </button>
 
                 <button
-                  onClick={submitOnboarding}
-                  disabled={loading || !onboardingForm.name.trim()}
+                  onClick={editingLicensee ? saveEdit : submitOnboarding}
+                  disabled={loading || !onboardingForm.licensee_name.trim() || !onboardingForm.name.trim()}
                   style={{
                     padding: "12px 32px",
                     borderRadius: 12,
                     border: "2px solid #1f4d2a",
-                    background: loading || !onboardingForm.name.trim() ? "#14532d" : "#22c55e",
+                    background: loading || !onboardingForm.licensee_name.trim() || !onboardingForm.name.trim() ? "#14532d" : "#22c55e",
                     color: "#000",
                     fontWeight: 900,
                     fontSize: 16,
-                    cursor: loading || !onboardingForm.name.trim() ? "not-allowed" : "pointer",
+                    cursor: loading || !onboardingForm.licensee_name.trim() || !onboardingForm.name.trim() ? "not-allowed" : "pointer",
                   }}
                 >
-                  {loading ? "Creating..." : "Create Licensee"}
+                  {loading ? (editingLicensee ? "Saving..." : "Creating...") : (editingLicensee ? "Save Changes" : "Create Licensee")}
                 </button>
               </div>
             </div>
