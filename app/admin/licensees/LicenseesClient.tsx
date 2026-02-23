@@ -450,7 +450,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "2fr 1fr 1fr 1fr auto auto",
+            gridTemplateColumns: "2fr 1fr 1fr 1fr auto auto auto",
             gap: 12,
             padding: 12,
             background: "#111",
@@ -460,6 +460,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
           <div style={{ fontWeight: 900, opacity: 0.9 }}>Code</div>
           <div style={{ fontWeight: 900, opacity: 0.9 }}>Status</div>
           <div style={{ fontWeight: 900, opacity: 0.9 }}>Created</div>
+          <div />
           <div />
           <div />
         </div>
@@ -472,7 +473,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
               key={x.id}
               style={{
                 display: "grid",
-                gridTemplateColumns: "2fr 1fr 1fr 1fr auto auto",
+                gridTemplateColumns: "2fr 1fr 1fr 1fr auto auto auto",
                 padding: 12,
                 borderTop: "1px solid #222",
                 alignItems: "center",
@@ -509,6 +510,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                   fontWeight: 900,
                   fontSize: 13,
                   cursor: loading ? "not-allowed" : "pointer",
+                  whiteSpace: "nowrap",
                 }}
               >
                 Edit
@@ -526,6 +528,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                   fontWeight: 900,
                   fontSize: 13,
                   cursor: loading ? "not-allowed" : "pointer",
+                  whiteSpace: "nowrap",
                 }}
               >
                 {isActive ? "Deactivate" : "Activate"}
@@ -537,12 +540,13 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                 style={{
                   padding: "8px 12px",
                   borderRadius: 10,
-                  border: "1px solid #334155",
-                  background: "#0f172a",
+                  border: "1px solid #1e40af",
+                  background: "#1e3a8a",
                   color: "#e2e8f0",
                   fontWeight: 900,
                   fontSize: 13,
                   cursor: loading ? "not-allowed" : "pointer",
+                  whiteSpace: "nowrap",
                 }}
               >
                 Videos
