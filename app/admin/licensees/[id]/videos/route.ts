@@ -26,17 +26,17 @@ function supabaseAdmin() {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
-// GET /api/admin/licensees/[id]/videos - Get assigned video labels for a licensee
+// GET /api/admin/licensees/[id]/videos
 export async function GET(
   req: Request,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   const auth = requireAdminKey(req);
   if (!auth.ok) return json(401, { error: auth.error });
 
   try {
     const supabase = supabaseAdmin();
-    const licenseeId = params.id;
+    const { id: licenseeId } = await context.params;
 
     const { data, error } = await supabase
       .from("licensee_video_access")
@@ -52,17 +52,17 @@ export async function GET(
   }
 }
 
-// PUT /api/admin/licensees/[id]/videos - Update video assignments for a licensee
+// PUT /api/admin/licensees/[id]/videos
 export async function PUT(
   req: Request,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   const auth = requireAdminKey(req);
   if (!auth.ok) return json(401, { error: auth.error });
 
   try {
     const supabase = supabaseAdmin();
-    const licenseeId = params.id;
+    const { id: licenseeId } = await context.params;
     const body = await req.json().catch(() => ({}));
 
     const videoLabels = Array.isArray(body.video_labels) ? body.video_labels : [];
