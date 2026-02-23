@@ -451,17 +451,17 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
           style={{
             display: "grid",
             gridTemplateColumns: "2fr 1fr 1fr 1fr auto auto auto",
-            gap: 12,
-            padding: 12,
+            padding: "12px",
             background: "#111",
+            gap: 0,
           }}
         >
-          <div style={{ fontWeight: 900, opacity: 0.9, textAlign: "left" }}>Name</div>
-          <div style={{ fontWeight: 900, opacity: 0.9, textAlign: "left" }}>Code</div>
-          <div style={{ fontWeight: 900, opacity: 0.9, textAlign: "left" }}>Status</div>
-          <div style={{ fontWeight: 900, opacity: 0.9, textAlign: "left" }}>Created</div>
-          <div />
-          <div />
+          <div style={{ fontWeight: 900, opacity: 0.9, paddingRight: 12 }}>Name</div>
+          <div style={{ fontWeight: 900, opacity: 0.9, paddingRight: 12 }}>Code</div>
+          <div style={{ fontWeight: 900, opacity: 0.9, paddingRight: 12 }}>Status</div>
+          <div style={{ fontWeight: 900, opacity: 0.9, paddingRight: 12 }}>Created</div>
+          <div style={{ paddingRight: 12 }} />
+          <div style={{ paddingRight: 12 }} />
           <div />
         </div>
 
@@ -474,27 +474,28 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
               style={{
                 display: "grid",
                 gridTemplateColumns: "2fr 1fr 1fr 1fr auto auto auto",
-                padding: 12,
+                padding: "12px",
                 borderTop: "1px solid #222",
                 alignItems: "center",
-                gap: 12,
+                gap: 0,
                 opacity: isActive ? 1 : 0.55,
               }}
             >
-              <div style={{ fontWeight: 700 }}>{x.name || "—"}</div>
+              <div style={{ fontWeight: 700, paddingRight: 12 }}>{x.name || "—"}</div>
 
               <div style={{ 
                 opacity: 0.9, 
-                fontFamily: "ui-monospace, monospace" 
+                fontFamily: "ui-monospace, monospace",
+                paddingRight: 12,
               }}>
                 {x.code || "—"}
               </div>
 
-              <div style={{ fontWeight: 900, color: isActive ? "#22c55e" : "#f97316" }}>
+              <div style={{ fontWeight: 900, color: isActive ? "#22c55e" : "#f97316", paddingRight: 12 }}>
                 {isActive ? "ACTIVE" : "INACTIVE"}
               </div>
 
-              <div style={{ opacity: 0.7 }}>
+              <div style={{ opacity: 0.7, paddingRight: 12 }}>
                 {x.created_at ? new Date(x.created_at).toLocaleDateString() : "—"}
               </div>
 
@@ -511,6 +512,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                   fontSize: 13,
                   cursor: loading ? "not-allowed" : "pointer",
                   whiteSpace: "nowrap",
+                  marginRight: 8,
                 }}
               >
                 Edit
@@ -529,6 +531,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                   fontSize: 13,
                   cursor: loading ? "not-allowed" : "pointer",
                   whiteSpace: "nowrap",
+                  marginRight: 8,
                 }}
               >
                 {isActive ? "Deactivate" : "Activate"}
