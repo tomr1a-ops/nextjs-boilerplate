@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 
 type Licensee = {
   id: string;
@@ -72,15 +72,19 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
 
   const adminHeaders = { "x-admin-key": adminKey };
 
+  // Shared table cell styles (keeps header + rows aligned)
+  const cell: React.CSSProperties = { paddingRight: 12, minWidth: 0 };
+  const headerCell: React.CSSProperties = { ...cell, fontWeight: 900, opacity: 0.9 };
+
   function generateNextCode(): string {
     if (items.length === 0) return "LIC001";
-    
+
     const existingCodes = items
-      .map(item => item.code || "")
-      .filter(c => c.match(/^LIC\d{3}$/))
-      .map(c => parseInt(c.replace("LIC", "")))
-      .filter(n => !isNaN(n));
-    
+      .map((item) => item.code || "")
+      .filter((c) => c.match(/^LIC\d{3}$/))
+      .map((c) => parseInt(c.replace("LIC", ""), 10))
+      .filter((n) => !isNaN(n));
+
     const maxNum = existingCodes.length > 0 ? Math.max(...existingCodes) : 0;
     const nextNum = maxNum + 1;
     return `LIC${String(nextNum).padStart(3, "0")}`;
@@ -388,10 +392,8 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
     <div>
       {/* Header with New Licensee Button */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <div style={{ fontSize: 14, opacity: 0.85 }}>
-          {loading ? "Loading..." : `${items.length} licensee(s)`}
-        </div>
-        
+        <div style={{ fontSize: 14, opacity: 0.85 }}>{loading ? "Loading..." : `${items.length} licensee(s)`}</div>
+
         <div style={{ display: "flex", gap: 10 }}>
           <button
             onClick={refresh}
@@ -447,24 +449,27 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
 
       {/* Licensees Table */}
       <div style={{ border: "1px solid #333", borderRadius: 14, overflow: "hidden" }}>
+        {/* Header row */}
         <div
           style={{
             display: "grid",
             gridTemplateColumns: "2fr 1fr 1fr 1fr auto auto auto",
             padding: "12px",
             background: "#111",
-            columnGap: 12,
+            gap: 0,
+            alignItems: "center",
           }}
         >
-          <div style={{ fontWeight: 900, opacity: 0.9 }}>Name</div>
-          <div style={{ fontWeight: 900, opacity: 0.9 }}>Code</div>
-          <div style={{ fontWeight: 900, opacity: 0.9 }}>Status</div>
-          <div style={{ fontWeight: 900, opacity: 0.9 }}>Created</div>
-          <div />
-          <div />
-          <div />
+          <div style={headerCell}>Name</div>
+          <div style={headerCell}>Code</div>
+          <div style={headerCell}>Status</div>
+          <div style={headerCell}>Created</div>
+          <div style={headerCell} />
+          <div style={headerCell} />
+          <div style={{ minWidth: 0 }} />
         </div>
 
+        {/* Rows */}
         {items.map((x) => {
           const isActive = x.active ?? true;
 
@@ -477,28 +482,21 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                 padding: "12px",
                 borderTop: "1px solid #222",
                 alignItems: "center",
-                columnGap: 12,
+                gap: 0,
                 opacity: isActive ? 1 : 0.55,
               }}
             >
-              <div style={{ fontWeight: 700 }}>{x.name || "—"}</div>
+              <div style={{ ...cell, fontWeight: 700 }}>{x.name || "—"}</div>
 
-              <div style={{ 
-                opacity: 0.9, 
-                fontFamily: "ui-monospace, monospace",
-              }}>
-                {x.code || "—"}
-              </div>
+              <div style={{ ...cell, opacity: 0.9, fontFamily: "ui-monospace, monospace" }}>{x.code || "—"}</div>
 
-              <div style={{ fontWeight: 900, color: isActive ? "#22c55e" : "#f97316" }}>
+              <div style={{ ...cell, fontWeight: 900, color: isActive ? "#22c55e" : "#f97316" }}>
                 {isActive ? "ACTIVE" : "INACTIVE"}
               </div>
 
-              <div style={{ opacity: 0.7 }}>
-                {x.created_at ? new Date(x.created_at).toLocaleDateString() : "—"}
-              </div>
+              <div style={{ ...cell, opacity: 0.7 }}>{x.created_at ? new Date(x.created_at).toLocaleDateString() : "—"}</div>
 
-              <div>
+              <div style={cell}>
                 <button
                   onClick={() => openEditModal(x)}
                   disabled={loading}
@@ -518,7 +516,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                 </button>
               </div>
 
-              <div>
+              <div style={cell}>
                 <button
                   onClick={() => toggleActive(x)}
                   disabled={loading}
@@ -538,7 +536,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                 </button>
               </div>
 
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <button
                   onClick={() => openVideosModal(x)}
                   disabled={loading}
@@ -563,7 +561,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
 
         {items.length === 0 && !loading && (
           <div style={{ padding: 14, opacity: 0.7 }}>
-            No licensees found. Click "New Licensee Onboarding" to add your first licensee.
+            No licensees found. Click &quot;New Licensee Onboarding&quot; to add your first licensee.
           </div>
         )}
       </div>
@@ -600,7 +598,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
             </h2>
 
             <div style={{ display: "grid", gap: 16 }}>
-              {/* Row 0: Licensee Name (Business Name) */}
+              {/* Row 0 */}
               <div>
                 <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 700, opacity: 0.9 }}>
                   Licensee Name <span style={{ color: "#ef4444" }}>*</span>
@@ -623,7 +621,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                 />
               </div>
 
-              {/* Row 1: Contact Name, Company */}
+              {/* Row 1 */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div>
                   <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 700, opacity: 0.9 }}>
@@ -666,7 +664,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                 </div>
               </div>
 
-              {/* Row 2: Email, Phone */}
+              {/* Row 2 */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div>
                   <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 700, opacity: 0.9 }}>
@@ -711,7 +709,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                 </div>
               </div>
 
-              {/* Row 3: Code (only show when creating, not editing) */}
+              {/* Row 3 */}
               {!editingLicensee && (
                 <div>
                   <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 700, opacity: 0.9 }}>
@@ -736,16 +734,18 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                         outline: "none",
                       }}
                     />
-                    <label style={{ 
-                      display: "flex", 
-                      alignItems: "center", 
-                      gap: 8, 
-                      cursor: "pointer",
-                      padding: "12px 14px",
-                      borderRadius: 12,
-                      border: "1px solid #333",
-                      background: "#0f0f0f",
-                    }}>
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        cursor: "pointer",
+                        padding: "12px 14px",
+                        borderRadius: 12,
+                        border: "1px solid #333",
+                        background: "#0f0f0f",
+                      }}
+                    >
                       <input
                         type="checkbox"
                         checked={autoGenerateCode}
@@ -758,7 +758,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                 </div>
               )}
 
-              {/* Row 4: Billing Address */}
+              {/* Row 4 */}
               <div>
                 <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 700, opacity: 0.9 }}>
                   Billing Address
@@ -766,7 +766,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                 <textarea
                   value={onboardingForm.billing_address}
                   onChange={(e) => setOnboardingForm({ ...onboardingForm, billing_address: e.target.value })}
-                  placeholder="123 Main St, Suite 100&#10;Atlanta, GA 30301"
+                  placeholder={"123 Main St, Suite 100\nAtlanta, GA 30301"}
                   rows={3}
                   style={{
                     width: "100%",
@@ -782,7 +782,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                 />
               </div>
 
-              {/* Row 5: Contract Details */}
+              {/* Row 5 */}
               <div>
                 <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 700, opacity: 0.9 }}>
                   Contract Details
@@ -806,7 +806,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                 />
               </div>
 
-              {/* Row 6: Notes */}
+              {/* Row 6 */}
               <div>
                 <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 700, opacity: 0.9 }}>
                   Internal Notes
@@ -883,14 +883,20 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                       padding: "12px 32px",
                       borderRadius: 12,
                       border: "2px solid #1f4d2a",
-                      background: loading || !onboardingForm.licensee_name.trim() || !onboardingForm.name.trim() ? "#14532d" : "#22c55e",
+                      background:
+                        loading || !onboardingForm.licensee_name.trim() || !onboardingForm.name.trim()
+                          ? "#14532d"
+                          : "#22c55e",
                       color: "#000",
                       fontWeight: 900,
                       fontSize: 16,
-                      cursor: loading || !onboardingForm.licensee_name.trim() || !onboardingForm.name.trim() ? "not-allowed" : "pointer",
+                      cursor:
+                        loading || !onboardingForm.licensee_name.trim() || !onboardingForm.name.trim()
+                          ? "not-allowed"
+                          : "pointer",
                     }}
                   >
-                    {loading ? (editingLicensee ? "Saving..." : "Creating...") : (editingLicensee ? "Save Changes" : "Create Licensee")}
+                    {loading ? (editingLicensee ? "Saving..." : "Creating...") : editingLicensee ? "Save Changes" : "Create Licensee"}
                   </button>
                 </div>
               </div>
@@ -930,9 +936,7 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                 <div style={{ fontWeight: 900, fontSize: 18 }}>Assign Videos</div>
                 <div style={{ opacity: 0.8, marginTop: 4 }}>
                   {showVideosFor.name || "Licensee"} —{" "}
-                  <span style={{ fontFamily: "ui-monospace, monospace" }}>
-                    {showVideosFor.code || "NO_CODE"}
-                  </span>
+                  <span style={{ fontFamily: "ui-monospace, monospace" }}>{showVideosFor.code || "NO_CODE"}</span>
                 </div>
               </div>
 
@@ -1011,14 +1015,10 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                           transition: "all 0.2s ease",
                         }}
                         onMouseEnter={(e) => {
-                          if (!checked[label]) {
-                            e.currentTarget.style.borderColor = "#555";
-                          }
+                          if (!checked[label]) e.currentTarget.style.borderColor = "#555";
                         }}
                         onMouseLeave={(e) => {
-                          if (!checked[label]) {
-                            e.currentTarget.style.borderColor = "#333";
-                          }
+                          if (!checked[label]) e.currentTarget.style.borderColor = "#333";
                         }}
                       >
                         <input
@@ -1026,19 +1026,15 @@ export default function LicenseesClient({ adminKey }: { adminKey: string }) {
                           checked={!!checked[label]}
                           onChange={() => toggleVideo(label)}
                           disabled={savingVideos}
-                          style={{ 
-                            width: 20, 
+                          style={{
+                            width: 20,
                             height: 20,
                             marginTop: 2,
                             cursor: savingVideos ? "not-allowed" : "pointer",
                           }}
                         />
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ 
-                            fontWeight: 900, 
-                            fontSize: 16,
-                            color: checked[label] ? "#22c55e" : "#fff",
-                          }}>
+                          <div style={{ fontWeight: 900, fontSize: 16, color: checked[label] ? "#22c55e" : "#fff" }}>
                             {v.label || v.id}
                           </div>
                         </div>
