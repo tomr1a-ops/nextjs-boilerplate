@@ -32,11 +32,14 @@ async function getLicenseeIdForRoom(
   supabase: any,
   room: string
 ): Promise<string | null> {
+  // Convert to uppercase to match licensee codes
+  const roomUpper = room.toUpperCase();
+  
   // Try licensee_rooms first (if you have this table)
   const { data: roomData } = await supabase
     .from("licensee_rooms")
     .select("licensee_id")
-    .eq("room_id", roomUpper)
+    .eq("room_id", room)
     .maybeSingle();
   
   if (roomData?.licensee_id) return roomData.licensee_id;
@@ -45,7 +48,7 @@ async function getLicenseeIdForRoom(
   const { data: licenseeData } = await supabase
     .from("licensees")
     .select("id")
-    .eq("code", room)
+    .eq("code", roomUpper)
     .maybeSingle();
 
   return licenseeData?.id || null;
@@ -117,13 +120,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Missing room" }, { status: 400 });
   }
   
-  // Convert to uppercase to match licensee codes
-  const roomUpper = room.toUpperCase();
-  
   const { data, error } = await (supabase as any)
     .from("room_sessions")
     .select("*")
-    .eq("room_id", roomUpper)
+    .eq("room_id", room)
     .maybeSingle();
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -132,7 +132,7 @@ export async function GET(req: NextRequest) {
     const { data: created, error: createErr } = await (supabase as any)
       .from("room_sessions")
       .insert({
-        room_id: roomUpper,
+        room_id: room,
         state: "stopped",
         playback_id: null,
         started_at: null,
@@ -169,9 +169,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing room" }, { status: 400 });
   }
   
-  // Convert to uppercase to match licensee codes
-  const roomUpper = room.toUpperCase();
-  
   const body = await req.json().catch(() => ({}));
   // Two modes:
   // A) state/playback update
@@ -181,7 +178,7 @@ export async function POST(req: NextRequest) {
   const { data: existing, error: readErr } = await (supabase as any)
     .from("room_sessions")
     .select("*")
-    .eq("room_id", roomUpper)
+    .eq("room_id", room)
     .maybeSingle();
   if (readErr) {
     return NextResponse.json({ error: readErr.message }, { status: 500 });
@@ -190,7 +187,7 @@ export async function POST(req: NextRequest) {
     const { error: createErr } = await (supabase as any)
       .from("room_sessions")
       .insert({
-        room_id: roomUpper,
+        room_id: room,
         state: "stopped",
         playback_id: null,
         started_at: null,
@@ -206,7 +203,7 @@ export async function POST(req: NextRequest) {
     }
   }
   // ✅ NEW: enforce active license BEFORE allowing commands (except stop)
-  const active = await isLicenseeActiveForRoom(supabase as any, roomUpper);
+  const active = await isLicenseeActiveForRoom(supabase as any, room);
   // Handle seek command
   if (command === "seek_delta") {
     // If inactive, block seeks
@@ -226,7 +223,7 @@ export async function POST(req: NextRequest) {
     const { data: cur, error: curErr } = await (supabase as any)
       .from("room_sessions")
       .select("command_id")
-      .eq("room_id", roomUpper)
+      .eq("room_id", room)
       .single();
     if (curErr) {
       return NextResponse.json({ error: curErr.message }, { status: 500 });
@@ -240,7 +237,7 @@ export async function POST(req: NextRequest) {
         command_value: value,
         updated_at: new Date().toISOString(),
       })
-      .eq("room_id", roomUpper);
+      .eq("room_id", room);
     if (updErr) {
       return NextResponse.json({ error: updErr.message }, { status: 500 });
     }
@@ -270,7 +267,7 @@ export async function POST(req: NextRequest) {
   if (state !== "stopped") {
     const ok = await isPlaybackAllowedForRoom(
       supabase as any,
-      roomUpper,
+      room,
       playback_id
     );
     if (!ok) {
@@ -299,7 +296,7 @@ export async function POST(req: NextRequest) {
   const { error: updErr } = await (supabase as any)
     .from("room_sessions")
     .update(patch)
-    .eq("room_id", roomUpper);
+    .eq("room_id", room);
   if (updErr) {
     return NextResponse.json({ error: updErr.message }, { status: 500 });
   }
