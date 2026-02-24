@@ -6,10 +6,11 @@ import { usePathname } from 'next/navigation'
 export default function ControlPage() {
   const pathname = usePathname()
   const room = pathname?.split('/').pop() || ''
-  
+
   const [session, setSession] = useState<any>(null)
   const [videos, setVideos] = useState<any[]>([])
   const [licenseeName, setLicenseeName] = useState<string>('')
+  const [selectedLevel, setSelectedLevel] = useState<number | null>(null)
 
   useEffect(() => {
     if (!room) return
@@ -84,56 +85,118 @@ export default function ControlPage() {
   }
 
   const isPlaying = session?.state === 'playing'
-  const currentVideo = videos.find(v => v.playback_id === session?.playback_id)
 
-  return (
-    <div className="bg-black text-white min-h-screen">
-      <div className="max-w-2xl mx-auto p-6 pb-52">
-        <div className="mb-4">
-          <h1 className="text-3xl font-bold">IMAOS Control</h1>
-          <p className="text-xl text-gray-400">{licenseeName || room}</p>
+  // Group videos by level (AL1 = Level 1, AL2 = Level 2, AL3 = Level 3)
+  const levels: Record<number, any[]> = { 1: [], 2: [], 3: [] }
+  for (const video of videos) {
+    const label = video.label || ''
+    if (label.startsWith('AL1')) levels[1].push(video)
+    else if (label.startsWith('AL2')) levels[2].push(video)
+    else if (label.startsWith('AL3')) levels[3].push(video)
+  }
+
+  const btnBase: React.CSSProperties = {
+    width: '100%',
+    padding: '22px 16px',
+    borderRadius: 16,
+    border: 'none',
+    fontSize: 20,
+    fontWeight: 800,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  }
+
+  // LEVEL SCREEN
+  if (selectedLevel !== null) {
+    const levelVideos = levels[selectedLevel] || []
+    return (
+      <div style={{ minHeight: '100vh', background: '#000', color: '#fff', padding: 20 }}>
+        <button
+          onClick={() => setSelectedLevel(null)}
+          style={{ ...btnBase, background: '#222', color: '#fff', marginBottom: 20, width: 'auto', paddingLeft: 24, paddingRight: 24 }}
+        >
+          ← Back
+        </button>
+
+        <div style={{ marginBottom: 20, fontSize: 22, fontWeight: 900, textAlign: 'center' }}>
+          Level {selectedLevel}
         </div>
 
-        <h2 className="text-xl font-bold mb-3">Available Videos</h2>
-        {videos.length === 0 ? (
-          <div className="text-center text-gray-400 py-8">Loading videos...</div>
-        ) : (
-          <div className="grid grid-cols-2 gap-3">
-            {videos.map((video) => (
+        {/* Transport controls */}
+        <div style={{ display: 'grid', gap: 12, marginBottom: 24 }}>
+          <button onClick={togglePlayPause} style={{ ...btnBase, background: isPlaying ? '#555' : '#333', color: '#fff' }}>
+            {isPlaying ? '⏸ Pause' : '▶ Resume'}
+          </button>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <button onClick={() => seek(-10)} style={{ ...btnBase, background: '#f59e0b', color: '#000' }}>⏪ 10s</button>
+            <button onClick={() => seek(10)} style={{ ...btnBase, background: '#f59e0b', color: '#000' }}>10s ⏩</button>
+          </div>
+          <button onClick={stopVideo} style={{ ...btnBase, background: '#dc2626', color: '#fff' }}>⏹ Stop</button>
+        </div>
+
+        {/* Videos */}
+        <div style={{ display: 'grid', gap: 12 }}>
+          {levelVideos.length === 0 ? (
+            <div style={{ textAlign: 'center', opacity: 0.5, padding: 40 }}>No videos in this level</div>
+          ) : (
+            levelVideos.map((video) => (
               <button
                 key={video.playback_id}
                 onClick={() => playVideo(video.playback_id)}
-                className={`p-5 rounded-2xl transition-all text-left ${
-                  session?.playback_id === video.playback_id
-                    ? 'bg-green-600 border-2 border-green-400'
-                    : 'bg-gray-800 hover:bg-gray-700'
-                }`}
+                style={{
+                  ...btnBase,
+                  background: session?.playback_id === video.playback_id ? '#059669' : '#1a3a2a',
+                  color: '#fff',
+                  border: session?.playback_id === video.playback_id ? '2px solid #34d399' : '2px solid transparent',
+                }}
               >
-                <div className="text-xl font-bold">{video.label || 'No Label'}</div>
-                {video.title && <div className="text-sm text-gray-400">{video.title}</div>}
+                {video.label || 'Video'}
               </button>
-            ))}
+            ))
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // MAIN SCREEN
+  return (
+    <div style={{ minHeight: '100vh', background: '#000', color: '#fff', padding: 20 }}>
+      <div style={{ textAlign: 'center', marginBottom: 24 }}>
+        <div style={{ fontSize: 14, opacity: 0.6 }}>{licenseeName || room}</div>
+        {session?.state === 'playing' && (
+          <div style={{ fontSize: 13, color: '#34d399', marginTop: 4 }}>
+            ▶ Playing
           </div>
         )}
       </div>
 
-      {/* Fixed controls at bottom */}
-      <div className="fixed bottom-0 left-0 right-0 bg-gray-950 border-t border-gray-800 p-4">
-        <div className="max-w-2xl mx-auto">
-          {session?.playback_id && (
-            <div className="text-center mb-2 text-green-400 font-bold text-sm">
-              ▶ {currentVideo?.label || 'Playing'}
-            </div>
-          )}
-          <div className="grid grid-cols-4 gap-2">
-            <button onClick={() => seek(-10)} className="p-3 bg-gray-700 rounded-xl font-bold text-sm">⏪ -10s</button>
-            <button onClick={togglePlayPause} className={`p-3 rounded-xl font-bold text-sm ${isPlaying ? 'bg-yellow-600' : 'bg-green-600'}`}>
-              {isPlaying ? '⏸ PAUSE' : '▶ PLAY'}
-            </button>
-            <button onClick={stopVideo} className="p-3 bg-red-600 rounded-xl font-bold text-sm">⏹ STOP</button>
-            <button onClick={() => seek(10)} className="p-3 bg-gray-700 rounded-xl font-bold text-sm">+10s ⏩</button>
-          </div>
+      {/* Transport controls */}
+      <div style={{ display: 'grid', gap: 12, marginBottom: 32 }}>
+        <button onClick={togglePlayPause} style={{ ...btnBase, background: '#333', color: '#fff' }}>
+          ⏸ Pause / Resume
+        </button>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <button onClick={() => seek(-10)} style={{ ...btnBase, background: '#f59e0b', color: '#000' }}>⏪ 10s</button>
+          <button onClick={() => seek(10)} style={{ ...btnBase, background: '#f59e0b', color: '#000' }}>10s ⏩</button>
         </div>
+        <button onClick={stopVideo} style={{ ...btnBase, background: '#dc2626', color: '#fff' }}>⏹ Stop</button>
+      </div>
+
+      {/* Level buttons */}
+      <div style={{ display: 'grid', gap: 12 }}>
+        {[1, 2, 3].map((level) => (
+          <button
+            key={level}
+            onClick={() => setSelectedLevel(level)}
+            style={{ ...btnBase, background: '#00c48c', color: '#000' }}
+          >
+            Level {level}
+          </button>
+        ))}
       </div>
     </div>
   )
