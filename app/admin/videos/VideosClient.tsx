@@ -121,7 +121,7 @@ export default function VideosClient({ adminKey }: { adminKey: string }) {
 
   return (
     <div>
-      {/* Nav */}
+            {/* Nav */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 10 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900 }}>IMAOS Admin</h1>
