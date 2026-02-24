@@ -1,12 +1,11 @@
 'use client'
 
-import { use, useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useState } from 'react'
+import { useParams } from 'next/navigation'
 
-export default function ControlPage({ params }: { params: Promise<{ room: string }> }) {
-  const resolvedParams = use(params)
-  const router = useRouter()
-  const room = resolvedParams.room
+export default function ControlPage() {
+  const params = useParams()
+  const room = params?.room as string
 
   const [session, setSession] = useState<any>(null)
   const [videos, setVideos] = useState<any[]>([])
@@ -14,6 +13,8 @@ export default function ControlPage({ params }: { params: Promise<{ room: string
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (!room) return
+    
     fetchSession()
     fetchVideos()
     fetchLicenseeName()
