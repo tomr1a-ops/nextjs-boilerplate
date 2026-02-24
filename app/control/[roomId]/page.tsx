@@ -9,12 +9,13 @@ export default function ControlPage() {
   
   const [session, setSession] = useState<any>(null)
   const [videos, setVideos] = useState<any[]>([])
+  const [licenseeName, setLicenseeName] = useState<string>('')
 
   useEffect(() => {
     if (!room) return
     
     fetchSession()
-    fetchAllVideos()
+    fetchLicenseeAndVideos()
     const interval = setInterval(fetchSession, 1000)
     return () => clearInterval(interval)
   }, [room])
@@ -25,10 +26,36 @@ export default function ControlPage() {
     setSession(data)
   }
 
-  async function fetchAllVideos() {
-    const res = await fetch(`/api/videos`)
-    const data = await res.json()
-    setVideos(data.videos || [])
+  async function fetchLicenseeAndVideos() {
+    try {
+      // Get licensee info
+      const licenseeRes = await fetch(`/api/licensees?code=${room}`)
+      const licenseeData = await licenseeRes.json()
+      
+      if (licenseeData.licensees && licenseeData.licensees.length > 0) {
+        const licensee = licenseeData.licensees[0]
+        setLicenseeName(licensee.name)
+        
+        // Get allowed videos for this licensee
+        const accessRes = await fetch(`/api/licensee-video-access?licensee_id=${licensee.id}`)
+        const accessData = await accessRes.json()
+        
+        if (accessData.access && accessData.access.length > 0) {
+          // Get video details
+          const labels = accessData.access.map((a: any) => a.video_label)
+          const videosRes = await fetch(`/api/videos`)
+          const videosData = await videosRes.json()
+          
+          // Filter to only allowed videos
+          const allowedVideos = videosData.videos.filter((v: any) => 
+            labels.includes(v.label)
+          )
+          setVideos(allowedVideos)
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch licensee/videos:', err)
+    }
   }
 
   async function playVideo(playbackId: string) {
@@ -65,11 +92,15 @@ export default function ControlPage() {
   }
 
   const isPlaying = session?.state === 'playing'
+  const currentVideo = videos.find(v => v.playback_id === session?.playback_id)
 
   return (
     <div className="min-h-screen bg-black text-white p-6">
       <div className="max-w-2xl mx-auto">
-        <h1 className="text-4xl font-bold mb-8">IMAOS Control — {room}</h1>
+        <div className="mb-8">
+          <h1 className="text-4xl font-bold mb-2">IMAOS Control</h1>
+          <p className="text-2xl text-gray-400">{licenseeName || room}</p>
+        </div>
 
         <div className="mb-6">
           <div className={`inline-block px-6 py-3 rounded-full text-lg font-semibold ${
@@ -81,47 +112,63 @@ export default function ControlPage() {
 
         {session?.playback_id && (
           <div className="mb-8 p-6 bg-gray-900 rounded-2xl border-2 border-green-500">
-            <div className="text-sm text-gray-400">Now Playing</div>
-            <div className="text-2xl font-bold text-green-400">{session.playback_id}</div>
+            <div className="flex items-center gap-4">
+              <div className="text-4xl">▶</div>
+              <div>
+                <div className="text-sm text-gray-400 uppercase tracking-wide">Now Playing</div>
+                <div className="text-3xl font-bold text-green-400">
+                  {currentVideo?.label || currentVideo?.title || session.playback_id}
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
         <div className="grid grid-cols-2 gap-4 mb-8">
-          <button onClick={togglePlayPause} className={`p-6 rounded-2xl text-xl font-bold ${
+          <button onClick={togglePlayPause} className={`p-6 rounded-2xl text-xl font-bold transition-all ${
             isPlaying ? 'bg-yellow-600 hover:bg-yellow-700' : 'bg-green-600 hover:bg-green-700'
           }`}>
             {isPlaying ? '⏸ PAUSE' : '▶ PLAY'}
           </button>
           
-          <button onClick={stopVideo} className="p-6 bg-red-600 hover:bg-red-700 rounded-2xl text-xl font-bold">
+          <button onClick={stopVideo} className="p-6 bg-red-600 hover:bg-red-700 rounded-2xl text-xl font-bold transition-all">
             ⏹ STOP
           </button>
 
-          <button onClick={() => seek(-10)} className="p-6 bg-gray-700 hover:bg-gray-600 rounded-2xl text-xl font-bold">
+          <button onClick={() => seek(-10)} className="p-6 bg-gray-700 hover:bg-gray-600 rounded-2xl text-xl font-bold transition-all">
             ⏪ -10s
           </button>
 
-          <button onClick={() => seek(10)} className="p-6 bg-gray-700 hover:bg-gray-600 rounded-2xl text-xl font-bold">
+          <button onClick={() => seek(10)} className="p-6 bg-gray-700 hover:bg-gray-600 rounded-2xl text-xl font-bold transition-all">
             +10s ⏩
           </button>
         </div>
 
         <h2 className="text-2xl font-bold mb-4">Available Videos</h2>
-        <div className="grid grid-cols-3 gap-4">
-          {videos.map((video) => (
-            <button
-              key={video.playback_id}
-              onClick={() => playVideo(video.playback_id)}
-              className={`p-6 rounded-2xl font-bold ${
-                session?.playback_id === video.playback_id
-                  ? 'bg-green-600'
-                  : 'bg-gray-800 hover:bg-gray-700'
-              }`}
-            >
-              {video.playback_id}
-            </button>
-          ))}
-        </div>
+        {videos.length === 0 ? (
+          <div className="text-center text-gray-400 py-8">No videos assigned to this licensee</div>
+        ) : (
+          <div className="grid grid-cols-2 gap-4">
+            {videos.map((video) => (
+              <button
+                key={video.playback_id}
+                onClick={() => playVideo(video.playback_id)}
+                className={`p-6 rounded-2xl transition-all ${
+                  session?.playback_id === video.playback_id
+                    ? 'bg-green-600 border-2 border-green-400'
+                    : 'bg-gray-800 hover:bg-gray-700'
+                }`}
+              >
+                <div className="text-2xl font-bold mb-1">
+                  {video.label || 'No Label'}
+                </div>
+                <div className="text-sm text-gray-400">
+                  {video.title || 'Untitled'}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
