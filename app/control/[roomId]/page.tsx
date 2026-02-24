@@ -45,7 +45,7 @@ export default function ControlPage() {
 
   async function fetchVideos() {
     try {
-      const res = await fetch(`/api/videos`)
+    const res = await fetch(`/api/videos?room=${room}`)
       const data = await res.json()
       setVideos(data.videos || [])
     } catch (err) {
