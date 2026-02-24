@@ -14,7 +14,7 @@ export default function ControlPage() {
     if (!room) return
     
     fetchSession()
-    fetchVideos()
+    fetchAllVideos()
     const interval = setInterval(fetchSession, 1000)
     return () => clearInterval(interval)
   }, [room])
@@ -25,8 +25,9 @@ export default function ControlPage() {
     setSession(data)
   }
 
-  async function fetchVideos() {
-    const res = await fetch(`/api/licensees/${room}/videos`)
+  async function fetchAllVideos() {
+    // Get all videos and filter on client side for now
+    const res = await fetch(`/api/videos`)
     const data = await res.json()
     setVideos(data.videos || [])
   }
@@ -88,7 +89,7 @@ export default function ControlPage() {
         {session?.playback_id && (
           <div className="mb-8 p-6 bg-gray-900 rounded-2xl border-2 border-green-500">
             <div className="text-sm text-gray-400">Now Playing</div>
-            <div className="text-3xl font-bold text-green-400">{session.playback_id}</div>
+            <div className="text-2xl font-bold text-green-400">{session.playback_id}</div>
           </div>
         )}
 
@@ -113,25 +114,21 @@ export default function ControlPage() {
         </div>
 
         <h2 className="text-2xl font-bold mb-4">Available Videos</h2>
-        {videos.length === 0 ? (
-          <div className="text-center text-gray-400 py-8">No videos assigned</div>
-        ) : (
-          <div className="grid grid-cols-2 gap-4">
-            {videos.map((video) => (
-              <button
-                key={video.playback_id}
-                onClick={() => playVideo(video.playback_id)}
-                className={`p-6 rounded-2xl font-bold ${
-                  session?.playback_id === video.playback_id
-                    ? 'bg-green-600 border-2 border-green-400'
-                    : 'bg-gray-800 hover:bg-gray-700'
-                }`}
-              >
-                {video.playback_id}
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="grid grid-cols-3 gap-4">
+          {videos.map((video) => (
+            <button
+              key={video.playback_id}
+              onClick={() => playVideo(video.playback_id)}
+              className={`p-6 rounded-2xl font-bold ${
+                session?.playback_id === video.playback_id
+                  ? 'bg-green-600'
+                  : 'bg-gray-800 hover:bg-gray-700'
+              }`}
+            >
+              {video.playback_id}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   )
