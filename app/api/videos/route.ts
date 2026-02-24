@@ -67,8 +67,7 @@ export async function GET(req: NextRequest) {
   }
 
   // Convert to uppercase to match licensee codes (AT100, not at100)
-  const roomUpper = room.toUpperCase();
-
+    const roomUpper = room;
   try {
     // Get licensee ID
     const licenseeId = await getLicenseeIdForRoom(supabase, roomUpper);
