@@ -90,7 +90,7 @@ export default function ControlPage() {
   const currentVideo = videos.find(v => v.playback_id === session?.playback_id)
 
   return (
-<div className="min-h-screen bg-black text-white p-6 overflow-y-auto pb-20">
+<div className="bg-black text-white p-6 pb-20">
       <div className="max-w-2xl mx-auto">
         <div className="mb-8">
           <h1 className="text-4xl font-bold mb-2">IMAOS Control</h1>
