@@ -15,46 +15,41 @@ export default function ControlPage() {
     if (!room) return
     
     fetchSession()
-    fetchLicenseeAndVideos()
+    fetchLicenseeName()
+    fetchVideos()
     const interval = setInterval(fetchSession, 1000)
     return () => clearInterval(interval)
   }, [room])
 
   async function fetchSession() {
-    const res = await fetch(`/api/session?room=${room}&t=${Date.now()}`)
-    const data = await res.json()
-    setSession(data)
+    try {
+      const res = await fetch(`/api/session?room=${room}&t=${Date.now()}`)
+      const data = await res.json()
+      setSession(data)
+    } catch (err) {
+      console.error('Session fetch error:', err)
+    }
   }
 
-  async function fetchLicenseeAndVideos() {
+  async function fetchLicenseeName() {
     try {
-      // Get licensee info
-      const licenseeRes = await fetch(`/api/licensees?code=${room}`)
-      const licenseeData = await licenseeRes.json()
-      
-      if (licenseeData.licensees && licenseeData.licensees.length > 0) {
-        const licensee = licenseeData.licensees[0]
-        setLicenseeName(licensee.name)
-        
-        // Get allowed videos for this licensee
-        const accessRes = await fetch(`/api/licensee-video-access?licensee_id=${licensee.id}`)
-        const accessData = await accessRes.json()
-        
-        if (accessData.access && accessData.access.length > 0) {
-          // Get video details
-          const labels = accessData.access.map((a: any) => a.video_label)
-          const videosRes = await fetch(`/api/videos`)
-          const videosData = await videosRes.json()
-          
-          // Filter to only allowed videos
-          const allowedVideos = videosData.videos.filter((v: any) => 
-            labels.includes(v.label)
-          )
-          setVideos(allowedVideos)
-        }
+      const res = await fetch(`/api/licensees?code=${room}`)
+      const data = await res.json()
+      if (data.licensees?.[0]?.name) {
+        setLicenseeName(data.licensees[0].name)
       }
     } catch (err) {
-      console.error('Failed to fetch licensee/videos:', err)
+      console.error('Licensee fetch error:', err)
+    }
+  }
+
+  async function fetchVideos() {
+    try {
+      const res = await fetch(`/api/videos`)
+      const data = await res.json()
+      setVideos(data.videos || [])
+    } catch (err) {
+      console.error('Videos fetch error:', err)
     }
   }
 
@@ -92,6 +87,8 @@ export default function ControlPage() {
   }
 
   const isPlaying = session?.state === 'playing'
+  
+  // Find current playing video
   const currentVideo = videos.find(v => v.playback_id === session?.playback_id)
 
   return (
@@ -117,8 +114,11 @@ export default function ControlPage() {
               <div>
                 <div className="text-sm text-gray-400 uppercase tracking-wide">Now Playing</div>
                 <div className="text-3xl font-bold text-green-400">
-                  {currentVideo?.label || currentVideo?.title || session.playback_id}
+                  {currentVideo?.label || currentVideo?.title || 'Video'}
                 </div>
+                {currentVideo?.title && (
+                  <div className="text-lg text-gray-400 mt-1">{currentVideo.title}</div>
+                )}
               </div>
             </div>
           </div>
@@ -146,14 +146,14 @@ export default function ControlPage() {
 
         <h2 className="text-2xl font-bold mb-4">Available Videos</h2>
         {videos.length === 0 ? (
-          <div className="text-center text-gray-400 py-8">No videos assigned to this licensee</div>
+          <div className="text-center text-gray-400 py-8">Loading videos...</div>
         ) : (
           <div className="grid grid-cols-2 gap-4">
             {videos.map((video) => (
               <button
                 key={video.playback_id}
                 onClick={() => playVideo(video.playback_id)}
-                className={`p-6 rounded-2xl transition-all ${
+                className={`p-6 rounded-2xl transition-all text-left ${
                   session?.playback_id === video.playback_id
                     ? 'bg-green-600 border-2 border-green-400'
                     : 'bg-gray-800 hover:bg-gray-700'
@@ -162,9 +162,11 @@ export default function ControlPage() {
                 <div className="text-2xl font-bold mb-1">
                   {video.label || 'No Label'}
                 </div>
-                <div className="text-sm text-gray-400">
-                  {video.title || 'Untitled'}
-                </div>
+                {video.title && (
+                  <div className="text-sm text-gray-400">
+                    {video.title}
+                  </div>
+                )}
               </button>
             ))}
           </div>
