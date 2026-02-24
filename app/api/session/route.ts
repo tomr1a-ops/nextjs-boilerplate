@@ -33,9 +33,7 @@ async function getLicenseeIdForRoom(
   room: string
 ): Promise<string | null> {
   // Convert to uppercase to match licensee codes
-  const roomUpper = room.toUpperCase();
-  
-  // Try licensee_rooms first (if you have this table)
+ // Try licensee_rooms first (if you have this table)
   const { data: roomData } = await supabase
     .from("licensee_rooms")
     .select("licensee_id")
@@ -44,11 +42,11 @@ async function getLicenseeIdForRoom(
   
   if (roomData?.licensee_id) return roomData.licensee_id;
 
-  // Fallback: treat room as licensee code (e.g., "AT100")
+  // Fallback: treat room as licensee code
   const { data: licenseeData } = await supabase
     .from("licensees")
     .select("id")
-    .eq("code", roomUpper)
+    .eq("code", room)
     .maybeSingle();
 
   return licenseeData?.id || null;
