@@ -32,16 +32,14 @@ export default function ControlPage() {
   }
 
   async function fetchLicenseeName() {
-    try {
-      const res = await fetch(`/api/licensees?code=${room}`)
-      const data = await res.json()
-      if (data.licensees?.[0]?.name) {
-        setLicenseeName(data.licensees[0].name)
-      }
-    } catch (err) {
-      console.error('Licensee fetch error:', err)
-    }
+  try {
+    const res = await fetch(`/api/licensee-name?code=${room}`)
+    const data = await res.json()
+    if (data.name) setLicenseeName(data.name)
+  } catch (err) {
+    console.error('Licensee fetch error:', err)
   }
+}
 
   async function fetchVideos() {
     try {
