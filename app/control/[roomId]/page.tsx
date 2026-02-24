@@ -26,48 +26,41 @@ export default function ControlPage() {
   }
 
   async function fetchAllVideos() {
-    // Get all videos and filter on client side for now
     const res = await fetch(`/api/videos`)
     const data = await res.json()
     setVideos(data.videos || [])
   }
 
   async function playVideo(playbackId: string) {
-    await fetch('/api/session', {
+    await fetch(`/api/session?room=${room}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ room_id: room, state: 'playing', playback_id: playbackId })
+      body: JSON.stringify({ state: 'playing', playback_id: playbackId })
     })
   }
 
   async function togglePlayPause() {
     const newState = session?.state === 'playing' ? 'paused' : 'playing'
-    await fetch('/api/session', {
+    await fetch(`/api/session?room=${room}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ room_id: room, state: newState, playback_id: session?.playback_id })
+      body: JSON.stringify({ state: newState, playback_id: session?.playback_id })
     })
   }
 
   async function stopVideo() {
-    await fetch('/api/session', {
+    await fetch(`/api/session?room=${room}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ room_id: room, state: 'stopped' })
+      body: JSON.stringify({ state: 'stopped' })
     })
   }
 
   async function seek(seconds: number) {
-    await fetch('/api/session', {
+    await fetch(`/api/session?room=${room}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        room_id: room,
-        state: session?.state || 'playing',
-        playback_id: session?.playback_id,
-        command_type: 'seek_delta',
-        command_value: seconds
-      })
+      body: JSON.stringify({ command: 'seek_delta', value: seconds })
     })
   }
 
