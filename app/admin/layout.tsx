@@ -6,7 +6,7 @@ export const fetchCache = "force-no-store";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ minHeight: "100vh", background: "#0b0b0b", color: "#fff" }}>
+   <div style={{ background: "#0b0b0b", color: "#fff", paddingBottom: 40 }}>
       <div style={{ maxWidth: 1040, margin: "0 auto", padding: 18 }}>
         {/* Top Bar */}
         <div
