@@ -159,14 +159,14 @@ export default function ControlPage() {
           position: 'fixed', bottom: 0, left: 0, right: 0,
           background: '#111', borderTop: '1px solid #333', padding: 16
         }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10, maxWidth: 600, margin: '0 auto' }}>
-            <button onClick={() => seek(-20)} style={{ ...btnBase, background: '#f59e0b', color: '#000', padding: '14px 8px', fontSize: 15 }}>⏪ 20s</button>
-            <button onClick={togglePlayPause} style={{ ...btnBase, background: isPlaying ? '#555' : '#22c55e', color: '#fff', padding: '14px 8px', fontSize: 15 }}>
-              {isPlaying ? '⏸' : '▶'}
-            </button>
-            <button onClick={stopVideo} style={{ ...btnBase, background: '#dc2626', color: '#fff', padding: '14px 8px', fontSize: 15 }}>⏹</button>
-            <button onClick={() => seek(20)} style={{ ...btnBase, background: '#f59e0b', color: '#000', padding: '14px 8px', fontSize: 15 }}>20s ⏩</button>
-          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, maxWidth: 600, margin: '0 auto' }}>
+  <button onClick={togglePlayPause} style={{ ...btnBase, background: isPlaying ? '#555' : '#22c55e', color: '#fff', padding: '20px 16px', fontSize: 20 }}>
+    {isPlaying ? '⏸ PAUSE' : '▶ PLAY'}
+  </button>
+  <button onClick={stopVideo} style={{ ...btnBase, background: '#dc2626', color: '#fff', padding: '20px 16px', fontSize: 20 }}>⏹ STOP</button>
+  <button onClick={() => seek(-20)} style={{ ...btnBase, background: '#f59e0b', color: '#000', padding: '20px 16px', fontSize: 20 }}>⏪ -20s</button>
+  <button onClick={() => seek(20)} style={{ ...btnBase, background: '#f59e0b', color: '#000', padding: '20px 16px', fontSize: 20 }}>+20s ⏩</button>
+</div>
         </div>
       </div>
     )
@@ -178,7 +178,7 @@ export default function ControlPage() {
       {/* Logo */}
       <div style={{ textAlign: 'center', marginBottom: 8 }}>
         <img
-          src="/IMA_logo_final3.png"
+   src="/IMA%20logo%20final3.png"
           alt="IMA Logo"
           style={{ width: 120, height: 120, objectFit: 'contain' }}
         />
