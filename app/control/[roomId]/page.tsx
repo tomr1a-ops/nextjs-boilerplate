@@ -85,8 +85,9 @@ export default function ControlPage() {
   }
 
   const isPlaying = session?.state === 'playing'
+  const currentVideo = videos.find(v => v.playback_id === session?.playback_id)
 
-  // Group videos by level (AL1 = Level 1, AL2 = Level 2, AL3 = Level 3)
+  // Group videos by level
   const levels: Record<number, any[]> = { 1: [], 2: [], 3: [] }
   for (const video of videos) {
     const label = video.label || ''
@@ -121,14 +122,14 @@ export default function ControlPage() {
           ← Back
         </button>
 
-             <div style={{ marginBottom: 20, textAlign: 'center' }}>
-        <div style={{ fontSize: 22, fontWeight: 900 }}>Level {selectedLevel}</div>
-        {session?.playback_id && currentVideo && (
-          <div style={{ marginTop: 6, fontSize: 16, color: '#34d399', fontWeight: 700 }}>
-            ▶ Playing: {currentVideo.label}
-          </div>
-        )}
-      </div>
+        <div style={{ marginBottom: 20, textAlign: 'center' }}>
+          <div style={{ fontSize: 22, fontWeight: 900 }}>Level {selectedLevel}</div>
+          {session?.playback_id && currentVideo && (
+            <div style={{ marginTop: 6, fontSize: 16, color: '#34d399', fontWeight: 700 }}>
+              ▶ Playing: {currentVideo.label}
+            </div>
+          )}
+        </div>
 
         {/* Transport controls */}
         <div style={{ display: 'grid', gap: 12, marginBottom: 24 }}>
@@ -172,9 +173,9 @@ export default function ControlPage() {
     <div style={{ minHeight: '100vh', background: '#000', color: '#fff', padding: 20 }}>
       <div style={{ textAlign: 'center', marginBottom: 24 }}>
         <div style={{ fontSize: 14, opacity: 0.6 }}>{licenseeName || room}</div>
-        {session?.state === 'playing' && (
+        {session?.state === 'playing' && currentVideo && (
           <div style={{ fontSize: 13, color: '#34d399', marginTop: 4 }}>
-            ▶ Playing
+            ▶ Playing: {currentVideo.label}
           </div>
         )}
       </div>
