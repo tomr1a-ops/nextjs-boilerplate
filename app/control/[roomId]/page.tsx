@@ -121,9 +121,14 @@ export default function ControlPage() {
           ← Back
         </button>
 
-        <div style={{ marginBottom: 20, fontSize: 22, fontWeight: 900, textAlign: 'center' }}>
-          Level {selectedLevel}
-        </div>
+             <div style={{ marginBottom: 20, textAlign: 'center' }}>
+        <div style={{ fontSize: 22, fontWeight: 900 }}>Level {selectedLevel}</div>
+        {session?.playback_id && currentVideo && (
+          <div style={{ marginTop: 6, fontSize: 16, color: '#34d399', fontWeight: 700 }}>
+            ▶ Playing: {currentVideo.label}
+          </div>
+        )}
+      </div>
 
         {/* Transport controls */}
         <div style={{ display: 'grid', gap: 12, marginBottom: 24 }}>
