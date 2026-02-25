@@ -137,8 +137,8 @@ export default function ControlPage() {
             {isPlaying ? '⏸ Pause' : '▶ Resume'}
           </button>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <button onClick={() => seek(-10)} style={{ ...btnBase, background: '#f59e0b', color: '#000' }}>⏪ 10s</button>
-            <button onClick={() => seek(10)} style={{ ...btnBase, background: '#f59e0b', color: '#000' }}>10s ⏩</button>
+            <button onClick={() => seek(-20)} style={{ ...btnBase, background: '#f59e0b', color: '#000' }}>⏪ 20s</button>
+            <button onClick={() => seek(20)} style={{ ...btnBase, background: '#f59e0b', color: '#000' }}>20s ⏩</button>
           </div>
           <button onClick={stopVideo} style={{ ...btnBase, background: '#dc2626', color: '#fff' }}>⏹ Stop</button>
         </div>
@@ -186,8 +186,8 @@ export default function ControlPage() {
           ⏸ Pause / Resume
         </button>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <button onClick={() => seek(-10)} style={{ ...btnBase, background: '#f59e0b', color: '#000' }}>⏪ 10s</button>
-          <button onClick={() => seek(10)} style={{ ...btnBase, background: '#f59e0b', color: '#000' }}>10s ⏩</button>
+          <button onClick={() => seek(-20)} style={{ ...btnBase, background: '#f59e0b', color: '#000' }}>⏪ 20s</button>
+          <button onClick={() => seek(20)} style={{ ...btnBase, background: '#f59e0b', color: '#000' }}>20s ⏩</button>
         </div>
         <button onClick={stopVideo} style={{ ...btnBase, background: '#dc2626', color: '#fff' }}>⏹ Stop</button>
       </div>
