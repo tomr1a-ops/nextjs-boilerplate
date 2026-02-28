@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IMAOS — 30,000 Foot View</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0a0a0a; font-family: 'DM Sans', sans-serif; color: #f0f0f0; padding: 40px 24px; }
+  .mod-card { transition: all 0.2s; cursor: pointer; }
+  .mod-card:hover { transform: translateY(-2px); }
+  .features { display: none; }
+  .features.open { display: block; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div style="text-align:center; margin-bottom:48px;">
+  <div style="font-size:11px; font-weight:700; letter-spacing:0.18em; text-transform:uppercase; color:#E63946; font-family:'Barlow Condensed',sans-serif; margin-bottom:8px;">IMAOS — Product Architecture</div>
+  <h1 style="font-family:'Barlow Condensed',sans-serif; font-weight:800; font-size:48px; letter-spacing:0.02em; color:#fff;">30,000 Foot View</h1>
+  <p style="color:#555; font-size:14px; margin-top:8px;">Click any module to expand. 11 modules · Full member lifecycle.</p>
+</div>
+
+<!-- Phase Legend -->
+<div style="display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-bottom:40px;" id="legend"></div>
+
+<!-- Flow Arrow -->
+<div style="display:flex; align-items:center; justify-content:center; margin-bottom:32px; gap:8px;">
+  <div style="font-size:12px; color:#444; font-weight:600; letter-spacing:0.1em;">PROSPECT</div>
+  <div style="flex:1; max-width:600px; height:2px; background:linear-gradient(90deg,#3B82F6,#E63946,#F4A261,#2A9D8F,#9B5DE5); border-radius:2px;"></div>
+  <div style="font-size:12px; color:#444; font-weight:600; letter-spacing:0.1em;">ADVOCATE</div>
+</div>
+
+<!-- Module Grid -->
+<div id="grid" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; max-width:1200px; margin:0 auto;"></div>
+
+<script>
+const MODULES = [
+  { id:1, phase:"ACQUIRE", color:"#3B82F6", title:"Prospect Management", icon:"🎯",
+    features:["Lead capture (landing page, referrals, walk-ins)","Lead pipeline & status tracking","Trial class scheduling","Follow-up sequences (email/SMS)","Lead source attribution","Convert prospect → member"],
+    connects:["Member Management"] },
+  { id:2, phase:"ONBOARD", color:"#8B5CF6", title:"Member Management", icon:"👤",
+    features:["Member profile (personal, guardian, emergency contact)","Digital waivers & document signing","Photo & ID","Membership plan assignment","Member status (trial → active → frozen → cancelled)","Belt / wrist wrap level","External ID sync (Java system)"],
+    connects:["Class Management","Billing","Gamification","Parent Portal"] },
+  { id:3, phase:"OPERATE", color:"#E63946", title:"Class Management", icon:"🥋",
+    features:["Class template definitions","Age groups & levels","Days / times / duration","Row & seat capacity (IMAOS model)","Instructor assignment","Video playlist assignment (Mux)","Multi-location support"],
+    connects:["Schedule / Calendar","Attendance"] },
+  { id:4, phase:"OPERATE", color:"#E63946", title:"Schedule / Calendar", icon:"📅",
+    features:["Weekly calendar view","Color-coded by class type","Live capacity counters","Session generation from templates","Session overrides (sub instructor, cancel)","Studio TV schedule display"],
+    connects:["Attendance"] },
+  { id:5, phase:"OPERATE", color:"#E63946", title:"Attendance & Check-in", icon:"✅",
+    features:["Eligible members list per session","Reserve & check-in flow","No-show tracking","Late arrivals","Attendance history per member","Staff check-in dashboard","Triggers gamification engine"],
+    connects:["Gamification","Reporting"] },
+  { id:6, phase:"ENGAGE", color:"#F4A261", title:"Gamification Engine", icon:"🏆",
+    features:["Wrist wrap progression (5 → 295 classes)","Level-up detection at check-in","TV announcement trigger at end of class","Getting close alert (system variable, default 3)","Attendance streaks (4, 8, 12 weeks)","Birthday recognition (TV + parent notification)","Streak broken → re-engagement alert","Parent progress notifications"],
+    connects:["Parent Portal","Communications"] },
+  { id:7, phase:"ENGAGE", color:"#F4A261", title:"Parent Portal", icon:"👨‍👩‍👧",
+    features:["Progress bar toward next wrist wrap level","Attendance history","Streak tracking","Upcoming class schedule","Notifications & announcements","Birthday recognition","Payment history","Digital waivers"],
+    connects:["Communications"] },
+  { id:8, phase:"MONETIZE", color:"#2A9D8F", title:"Billing & Payments", icon:"💳",
+    features:["Membership plan management","Stripe subscription billing","Monthly & annual cycles","Failed payment handling","Payment history","Setup fees & contracts","Revenue per studio reporting","Point of sale (gear, uniforms)"],
+    connects:["Reporting"] },
+  { id:9, phase:"RETAIN", color:"#457B9D", title:"Communications", icon:"📣",
+    features:["Automated SMS & email triggers","Getting close to level-up alert","Level-up congratulations","Birthday messages","Streak milestones","We miss you (streak broken)","Payment reminders","Broadcast to all members","Class cancellation alerts"],
+    connects:["Parent Portal"] },
+  { id:10, phase:"GROW", color:"#9B5DE5", title:"Reporting & Analytics", icon:"📊",
+    features:["Attendance trends by class","Class fill rates","Member retention signals","Revenue per studio","Wrist wrap progression stats","Streak & engagement metrics","Churn prediction","Platform-wide analytics (IMAOS)"],
+    connects:[] },
+  { id:11, phase:"PLATFORM", color:"#374151", title:"Platform Admin", icon:"⚙️",
+    features:["Studio onboarding & provisioning","Subscription tier management (White/Blue/Black)","System variables (alert thresholds etc.)","Licensee management","Video content library (upload, assign)","Java membership system sync (REST API)","Super admin command center"],
+    connects:[] },
+];
+
+const PHASES = [
+  {name:"ACQUIRE",color:"#3B82F6"},{name:"ONBOARD",color:"#8B5CF6"},
+  {name:"OPERATE",color:"#E63946"},{name:"ENGAGE",color:"#F4A261"},
+  {name:"MONETIZE",color:"#2A9D8F"},{name:"RETAIN",color:"#457B9D"},
+  {name:"GROW",color:"#9B5DE5"},{name:"PLATFORM",color:"#374151"},
+];
+
+// Build legend
+const legend = document.getElementById('legend');
+PHASES.forEach(p => {
+  const el = document.createElement('div');
+  el.style.cssText = `background:${p.color}22; border:1px solid ${p.color}55; border-radius:20px; padding:4px 12px; font-size:11px; font-weight:700; letter-spacing:0.08em; color:${p.color}; font-family:'Barlow Condensed',sans-serif;`;
+  el.textContent = p.name;
+  legend.appendChild(el);
+});
+
+// Build cards
+const grid = document.getElementById('grid');
+MODULES.forEach(mod => {
+  const card = document.createElement('div');
+  card.className = 'mod-card';
+  card.style.cssText = `background:#111; border:1px solid #1e1e1e; border-top:4px solid ${mod.color}; border-radius:10px; padding:20px; position:relative;`;
+
+  const connectsHtml = mod.connects.length ? mod.connects.map(c =>
+    `<span style="font-size:10px; color:#555; background:#1a1a1a; border:1px solid #222; border-radius:3px; padding:2px 6px;">→ ${c}</span>`
+  ).join('') : '';
+
+  const featuresHtml = mod.features.map(f =>
+    `<div style="display:flex; gap:8px; align-items:flex-start; margin-bottom:6px;">
+      <span style="color:${mod.color}; font-size:12px; margin-top:2px; flex-shrink:0;">▸</span>
+      <span style="font-size:13px; color:#ccc; line-height:1.4;">${f}</span>
+    </div>`
+  ).join('');
+
+  card.innerHTML = `
+    <div style="position:absolute; top:14px; right:16px; font-size:11px; color:#333; font-family:'Barlow Condensed',sans-serif; font-weight:700; letter-spacing:0.06em;">M${mod.id}</div>
+    <div style="display:inline-block; background:${mod.color}22; color:${mod.color}; border:1px solid ${mod.color}44; border-radius:4px; padding:2px 8px; font-size:10px; font-weight:700; letter-spacing:0.08em; font-family:'Barlow Condensed',sans-serif; margin-bottom:12px;">${mod.phase}</div>
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:4px;">
+      <span style="font-size:24px;">${mod.icon}</span>
+      <div>
+        <div style="font-family:'Barlow Condensed',sans-serif; font-weight:800; font-size:20px; color:#fff; letter-spacing:0.02em; line-height:1.1;">${mod.title}</div>
+        <div style="font-size:11px; color:#444;">Module ${mod.id}</div>
+      </div>
+    </div>
+    ${connectsHtml ? `<div style="display:flex; gap:4px; flex-wrap:wrap; margin-top:10px;">${connectsHtml}</div>` : ''}
+    <div class="features" id="feat-${mod.id}" style="margin-top:16px; border-top:1px solid ${mod.color}33; padding-top:16px;">
+      <div style="font-size:10px; font-weight:700; color:#555; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:10px;">Features</div>
+      ${featuresHtml}
+    </div>
+    <div class="hint" style="margin-top:12px; font-size:11px; color:#333; text-align:right;">▼ expand</div>
+  `;
+
+  card.addEventListener('click', () => {
+    const feat = document.getElementById(`feat-${mod.id}`);
+    const hint = card.querySelector('.hint');
+    const isOpen = feat.classList.contains('open');
+    feat.classList.toggle('open');
+    card.style.borderColor = isOpen ? '#1e1e1e' : mod.color;
+    hint.textContent = isOpen ? '▼ expand' : '▲ collapse';
+  });
+
+  grid.appendChild(card);
+});
+</script>
+</body>
+</html>
