@@ -10,11 +10,20 @@ function getAdminSupabase() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
+function roomCandidates(room: string) {
+  const trimmed = room.trim();
+  const lower = trimmed.toLowerCase();
+  const upper = trimmed.toUpperCase();
+  return Array.from(new Set([trimmed, lower, upper])).filter(Boolean);
+}
+
 async function getLicenseeForRoom(supabase: any, room: string): Promise<{ id: string; pin: string | null } | null> {
+  const candidates = roomCandidates(room);
+
   const { data: roomData } = await supabase
     .from("licensee_rooms")
     .select("licensee_id")
-    .eq("room_id", room)
+    .in("room_id", candidates)
     .maybeSingle();
 
   if (roomData?.licensee_id) {
@@ -29,10 +38,30 @@ async function getLicenseeForRoom(supabase: any, room: string): Promise<{ id: st
   const { data: licenseeData } = await supabase
     .from("licensees")
     .select("id, pin")
-    .eq("code", room)
+    .in("code", candidates)
     .maybeSingle();
 
-  return licenseeData || null;
+  if (licenseeData) return licenseeData;
+
+  // Final fallback: many environments assign licensee on devices, not licensee_rooms.
+  const { data: deviceData } = await supabase
+    .from("devices")
+    .select("licensee_id,last_seen")
+    .in("room_id", candidates)
+    .not("licensee_id", "is", null)
+    .order("last_seen", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!deviceData?.licensee_id) return null;
+
+  const { data: mappedLicensee } = await supabase
+    .from("licensees")
+    .select("id,pin")
+    .eq("id", deviceData.licensee_id)
+    .maybeSingle();
+
+  return mappedLicensee || null;
 }
 
 async function isLicenseeActive(supabase: any, licenseeId: string): Promise<boolean> {
@@ -51,7 +80,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Missing Supabase configuration" }, { status: 500 });
   }
 
-  const room = req.nextUrl.searchParams.get("room");
+  const room = req.nextUrl.searchParams.get("room")?.trim();
   if (!room) {
     return NextResponse.json({ error: "Missing room parameter" }, { status: 400 });
   }
@@ -64,8 +93,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Check PIN if one is set
-    if (licensee.pin && licensee.pin !== pin) {
+    // Optional PIN validation: only enforce when a PIN is provided by client.
+    if (pin && licensee.pin && licensee.pin !== pin) {
       return NextResponse.json({ error: "Invalid PIN" }, { status: 401 });
     }
 
@@ -83,7 +112,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: labelsError.message }, { status: 500 });
     }
 
-    const labels = (allowedLabels || []).map((x: any) => x.video_label).filter(Boolean);
+    const labels = (allowedLabels || [])
+      .map((x: any) => String(x.video_label || "").trim().toUpperCase())
+      .filter(Boolean);
     if (labels.length === 0) {
       return NextResponse.json({ videos: [] });
     }

@@ -9,6 +9,13 @@ function getAdminSupabase() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
+function roomCandidates(room: string) {
+  const trimmed = room.trim();
+  const lower = trimmed.toLowerCase();
+  const upper = trimmed.toUpperCase();
+  return Array.from(new Set([trimmed, lower, upper])).filter(Boolean);
+}
+
 // If controller sometimes posts a label like "AL1V1", translate it to mux playback_id
 async function normalizePlaybackId(
   supabase: any,
@@ -32,12 +39,13 @@ async function getLicenseeIdForRoom(
   supabase: any,
   room: string
 ): Promise<string | null> {
-  // Convert to uppercase to match licensee codes
- // Try licensee_rooms first (if you have this table)
+  const candidates = roomCandidates(room);
+
+  // Try licensee_rooms first
   const { data: roomData } = await supabase
     .from("licensee_rooms")
     .select("licensee_id")
-    .eq("room_id", room)
+    .in("room_id", candidates)
     .maybeSingle();
   
   if (roomData?.licensee_id) return roomData.licensee_id;
@@ -46,10 +54,22 @@ async function getLicenseeIdForRoom(
   const { data: licenseeData } = await supabase
     .from("licensees")
     .select("id")
-    .eq("code", room)
+    .in("code", candidates)
     .maybeSingle();
 
-  return licenseeData?.id || null;
+  if (licenseeData?.id) return licenseeData.id;
+
+  // Final fallback: resolve from paired/assigned device by room_id.
+  const { data: deviceData } = await supabase
+    .from("devices")
+    .select("licensee_id,last_seen")
+    .in("room_id", candidates)
+    .not("licensee_id", "is", null)
+    .order("last_seen", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  return deviceData?.licensee_id || null;
 }
 
 // ✅ NEW: enforce licensee.active
@@ -113,7 +133,7 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     );
   }
-  const room = req.nextUrl.searchParams.get("room");
+  const room = req.nextUrl.searchParams.get("room")?.trim();
   if (!room) {
     return NextResponse.json({ error: "Missing room" }, { status: 400 });
   }
@@ -162,7 +182,7 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
-  const room = req.nextUrl.searchParams.get("room");
+  const room = req.nextUrl.searchParams.get("room")?.trim();
   if (!room) {
     return NextResponse.json({ error: "Missing room" }, { status: 400 });
   }
