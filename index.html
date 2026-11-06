@@ -1,0 +1,564 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>[hidden]{display:none!important}</style>
+<title>IMA Journey App</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Russo+One&family=Inter:wght@500;600;700;800&display=swap">
+<style>
+/* Layout: one phone, centered on a dark stage; four tabs plus a full-screen award moment. Neon Arena look, single dark theme by choice. */
+:root {
+  color-scheme: dark;
+  --stage: #070a1c;
+  --bg: #0d1230;
+  --panel: #161d47;
+  --panel-deep: #0a0f2a;
+  --panel-quiet: #0f1538;
+  --line: #2f3b80;
+  --line-soft: #34407e;
+  --ink: #ffffff;
+  --muted: #b4bdec;
+  --soft: #e3e7ff;
+  --cyan: #22d3ee;
+  --cyan-ink: #04323f;
+  --cyan-soft: #a5f3fc;
+  --pink: #ff3ea5;
+  --pink-bg: #2b0f45;
+  --pink-soft: #ffc8e7;
+  --pink-label: #ff9fd2;
+  --mint: #5eead4;
+  --gold: #ffe46b;
+  --orange: #e8862a;
+  --orange-bg: #2a1606;
+  --orange-ink: #ffc28a;
+  --blue: #2f6fd6;
+  --display: 'Russo One', 'Arial Black', Impact, sans-serif;
+  --body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+html, body { height: 100%; }
+* { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { background: var(--stage); color: var(--ink); font-family: var(--body); }
+.stage {
+  min-height: 100%; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  padding-block: 20px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.hint { font-size: 13px; color: var(--muted); text-align: center; max-width: 390px; line-height: 1.4; }
+.phone {
+  position: relative; width: 100%; max-width: 390px; height: min(844px, calc(100dvh - 90px)); min-height: 560px;
+  background: var(--bg); border-radius: 36px; border: 2px solid #232c66; box-shadow: 0 30px 80px rgba(0,0,0,0.6), 0 0 60px rgba(34,211,238,0.12);
+  overflow: hidden; display: flex; flex-direction: column;
+}
+.scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+.scroll::-webkit-scrollbar { display: none; }
+.screen { padding: 26px 22px 28px; display: flex; flex-direction: column; gap: 20px; }
+
+/* Tab bar */
+.tabs { flex: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); background: #0a0e26; border-top: 1px solid #222a5e; padding: 6px 6px calc(10px + env(safe-area-inset-bottom, 0px)); }
+.tab { position: relative; background: none; border: 0; color: #8a93cc; font: 700 12px var(--body); display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 0; min-height: 52px; cursor: pointer; border-radius: 12px; }
+.tab svg { width: 24px; height: 24px; }
+.tab[aria-current="page"] { color: var(--cyan); }
+.tab[aria-current="page"] svg { filter: drop-shadow(0 0 6px rgba(34,211,238,0.8)); }
+.tab:focus-visible, button:focus-visible, a:focus-visible, .tap:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+.badge { position: absolute; top: 4px; left: calc(50% + 6px); min-width: 18px; height: 18px; border-radius: 9px; background: var(--pink); color: #fff; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 8px var(--pink); }
+
+/* Shared type */
+.name { font-family: var(--display); font-size: 42px; line-height: 1.05; text-shadow: 0 0 20px rgba(34,211,238,0.75), 0 3px 0 #0e7490; }
+.h1 { font-family: var(--display); font-size: 34px; line-height: 1.05; text-shadow: 0 0 20px rgba(34,211,238,0.75), 0 3px 0 #0e7490; }
+.h2 { font-family: var(--display); font-size: 22px; text-wrap: balance; }
+.sub { font-size: 14px; line-height: 1.4; color: var(--muted); }
+.eyebrow { font-size: 13px; font-weight: 800; letter-spacing: 3px; text-transform: uppercase; }
+.stack4 { display: flex; flex-direction: column; gap: 4px; }
+
+/* Belt bar */
+.belt { position: relative; height: 66px; border-radius: 10px; display: flex; align-items: center; justify-content: flex-end; gap: 7px; padding: 0 16px; }
+.belt::before { content: ""; position: absolute; left: 8px; right: 8px; top: 5px; height: 36%; border-radius: 8px; background: linear-gradient(180deg, rgba(255,255,255,0.7), rgba(255,255,255,0)); }
+.belt.yellow { background: linear-gradient(180deg, #fff08a 0%, #f2cf2e 48%, #c9a11a 100%); box-shadow: 0 8px 0 #8f720c, 0 0 30px rgba(242,207,46,0.35); }
+.tip { position: relative; width: 20px; height: 50px; border-radius: 4px; background: linear-gradient(90deg, rgba(255,255,255,0.45), rgba(255,255,255,0) 45%, rgba(0,0,0,0.35)), #1a1a1a; box-shadow: 0 3px 0 rgba(0,0,0,0.55); }
+
+/* Cards */
+.card { border-radius: 20px; background: var(--panel); border: 2px solid var(--line); box-shadow: 0 6px 0 #060920; padding: 16px; }
+.card.pink { background: var(--pink-bg); border-color: var(--pink); box-shadow: 0 8px 0 #12051f, 0 0 30px rgba(255,62,165,0.4); }
+.card.cyan { border-color: var(--cyan); box-shadow: 0 8px 0 #060920, 0 0 24px rgba(34,211,238,0.3); }
+.card.orange { background: var(--orange-bg); border-color: var(--orange); box-shadow: 0 8px 0 #120902, 0 0 24px rgba(232,134,42,0.35); }
+.bar { height: 14px; border-radius: 7px; background: var(--panel-deep); box-shadow: inset 0 3px 6px rgba(0,0,0,0.6); overflow: hidden; }
+.bar > i { display: block; height: 100%; border-radius: 7px; background: linear-gradient(90deg, #0b6b86, var(--cyan)); box-shadow: 0 0 10px rgba(34,211,238,0.7); }
+.ring { width: 42px; height: 42px; border-radius: 50%; box-sizing: border-box; background: var(--panel-deep); border: 3px solid var(--pink); box-shadow: inset 0 4px 8px rgba(0,0,0,0.65); }
+.ring.sm { width: 30px; height: 30px; border-color: var(--cyan); }
+.btnrow { display: flex; gap: 10px; }
+.btn { flex: 1; min-height: 52px; border-radius: 14px; font: 800 16px var(--body); display: flex; align-items: center; justify-content: center; cursor: pointer; border: 2px solid var(--line); background: var(--panel); color: var(--ink); box-shadow: 0 5px 0 #060920; }
+.btn.primary { background: var(--cyan); color: var(--cyan-ink); border-color: var(--cyan); box-shadow: 0 5px 0 #0e7490; }
+.btn.hot { background: var(--pink); color: #fff; border-color: var(--pink); box-shadow: 0 5px 0 #8a1659; }
+.back { align-self: flex-start; background: none; border: 0; color: var(--cyan); font: 700 15px var(--body); min-height: 44px; padding: 0; cursor: pointer; }
+
+/* Home: prize */
+.prize { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; padding: 20px 18px; border-radius: 22px; }
+.prize .title { display: flex; align-items: center; gap: 14px; font-family: var(--display); font-size: 34px; line-height: 1; }
+.prize .tip { width: 18px; height: 46px; border: 2px solid var(--pink); box-shadow: 0 0 16px rgba(255,62,165,0.9); }
+.rings { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+
+/* Home: road */
+.road { display: flex; flex-direction: column; }
+.step { display: flex; gap: 14px; }
+.rail { display: flex; flex-direction: column; align-items: center; flex: none; }
+.dot { width: 46px; height: 46px; border-radius: 50%; box-sizing: border-box; display: flex; align-items: center; justify-content: center; font-family: var(--display); font-size: 22px; background: var(--panel-deep); border: 3px solid var(--line-soft); color: var(--muted); }
+.dot.now { background: var(--pink); border-color: var(--pink); color: #fff; box-shadow: 0 0 18px rgba(255,62,165,0.9); }
+.dot.goal { border-color: var(--orange); color: var(--orange-ink); }
+.line { width: 4px; flex: 1; min-height: 20px; background: var(--line-soft); }
+.stepcard { flex: 1; min-width: 0; border-radius: 18px; padding: 14px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 10px; background: var(--panel-quiet); border: 2px solid var(--line); }
+.stepcard.now { background: var(--panel); border-color: var(--pink); box-shadow: 0 6px 0 #060920; }
+.stepcard.goal { background: var(--orange-bg); border-color: var(--orange); box-shadow: 0 6px 0 #120902, 0 0 22px rgba(232,134,42,0.35); margin-bottom: 0; flex-direction: row; align-items: center; gap: 12px; }
+.stepcard b { font-size: 18px; font-weight: 800; }
+.stepcard p { margin: 0; font-size: 14px; line-height: 1.4; color: #c4cbf0; }
+.stepcard.now p { color: var(--soft); }
+.chips { display: flex; gap: 10px; }
+.chip { flex: 1; display: flex; align-items: center; gap: 10px; border-radius: 12px; background: var(--panel-deep); padding: 10px 12px; font-size: 15px; font-weight: 700; line-height: 1.25; }
+.stripe { width: 10px; height: 24px; border-radius: 3px; flex: none; }
+
+/* Lists of rows */
+.rowcard { display: flex; align-items: flex-start; gap: 12px; border-radius: 16px; padding: 14px; background: var(--panel); border: 2px solid var(--line); box-shadow: 0 6px 0 #060920; }
+.rowcard.pink { background: var(--pink-bg); border-color: var(--pink); box-shadow: 0 6px 0 #12051f, 0 0 20px rgba(255,62,165,0.35); }
+.rowcard.cyan { border-color: var(--cyan); box-shadow: 0 6px 0 #060920, 0 0 20px rgba(34,211,238,0.3); }
+.rowcard.orange { background: var(--orange-bg); border-color: var(--orange); box-shadow: 0 6px 0 #120902, 0 0 18px rgba(232,134,42,0.35); }
+.rowcard .ic { width: 44px; height: 44px; border-radius: 12px; flex: none; display: flex; align-items: center; justify-content: center; font-family: var(--display); font-size: 18px; background: var(--panel-deep); border: 2px solid var(--line-soft); box-sizing: border-box; }
+.rowcard.pink .ic { background: var(--pink); border-color: var(--pink); color: #fff; }
+.rowcard.cyan .ic { background: var(--cyan); border-color: var(--cyan); color: var(--cyan-ink); }
+.rowcard.orange .ic { background: var(--orange); border-color: var(--orange); color: var(--orange-bg); }
+.rowcard .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.rowcard .t { font-size: 16px; font-weight: 800; line-height: 1.25; }
+.rowcard .d { font-size: 13px; line-height: 1.4; color: var(--muted); }
+.rowcard.pink .d { color: var(--pink-soft); }
+.rowcard.cyan .d { color: var(--cyan-soft); }
+.rowcard.orange .d { color: var(--orange-ink); }
+.rowcard .meta { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.unread { width: 10px; height: 10px; border-radius: 50%; background: var(--pink); box-shadow: 0 0 8px var(--pink); }
+.tap { cursor: pointer; text-align: left; font: inherit; color: inherit; width: 100%; }
+.tap .go { font-size: 12px; font-weight: 800; color: var(--cyan); }
+.group { display: flex; flex-direction: column; gap: 10px; }
+
+/* Belts map */
+.beltrow { display: flex; flex-direction: column; gap: 10px; border-radius: 16px; padding: 12px 14px; background: var(--panel-deep); border: 2px dashed var(--line-soft); }
+.beltrow .top { display: flex; align-items: center; gap: 12px; }
+.beltrow.done { background: var(--panel); border: 2px solid var(--line); box-shadow: 0 6px 0 #060920; }
+.beltrow.here { background: var(--pink-bg); border: 2px solid var(--pink); box-shadow: 0 7px 0 #12051f, 0 0 26px rgba(255,62,165,0.45); }
+.beltrow.next { background: var(--panel); border: 2px solid var(--cyan); box-shadow: 0 6px 0 #060920, 0 0 20px rgba(34,211,238,0.3); }
+.sw { width: 72px; height: 28px; border-radius: 6px; flex: none; box-sizing: border-box; }
+.beltrow .n { font-size: 17px; font-weight: 800; }
+.beltrow .s { font-size: 13px; color: var(--muted); }
+.beltrow.done .s { color: var(--mint); font-weight: 600; }
+.beltrow.here .s { color: var(--pink-soft); font-weight: 600; }
+.beltrow.next .s { color: var(--cyan-soft); font-weight: 600; }
+.pill { font-size: 12px; font-weight: 800; border-radius: 999px; padding: 5px 10px; white-space: nowrap; flex: none; }
+.stagehead { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.stagedot { width: 14px; height: 14px; border-radius: 50%; }
+
+/* Wins */
+.weeks { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px; }
+.wk { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 11px; font-weight: 800; color: var(--pink-soft); }
+.wk i { display: block; width: 100%; aspect-ratio: 1; border-radius: 8px; box-sizing: border-box; background: #12051f; border: 2px solid #5a2a7a; }
+.wk i.on { background: var(--pink); border: 0; box-shadow: 0 0 10px rgba(255,62,165,0.8); }
+.wk i.part { border: 2px dashed var(--pink); background: linear-gradient(0deg, rgba(255,62,165,0.6) 50%, #12051f 50%); }
+.hurdle { display: flex; align-items: center; gap: 10px; min-height: 48px; border-bottom: 1px solid var(--line); }
+.hurdle:last-child { border-bottom: 0; }
+.hurdle .slot { width: 44px; flex: none; display: flex; justify-content: center; }
+.hurdle .n { flex: 1; font-size: 15px; font-weight: 700; }
+.hurdle .w { font-size: 12px; font-weight: 700; color: var(--muted); }
+.mini-tip { width: 12px; height: 28px; border-radius: 3px; border: 1px solid rgba(255,255,255,0.5); box-shadow: 0 2px 0 rgba(0,0,0,0.5); }
+.mini-belt { width: 40px; height: 16px; border-radius: 4px; box-shadow: 0 2px 0 rgba(0,0,0,0.5); }
+.badges { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.bdg { border-radius: 16px; padding: 14px 6px 12px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; background: var(--panel); border: 2px solid var(--line); box-shadow: 0 6px 0 #060920; }
+.bdg .m { width: 52px; height: 52px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: var(--display); font-size: 18px; color: #3a2c00; background: radial-gradient(circle at 34% 28%, #fff7c2 0%, var(--gold) 45%, #b8901a 100%); box-shadow: 0 4px 0 #6b5208, 0 0 16px rgba(255,228,107,0.6); }
+.bdg .m svg { width: 26px; height: 26px; }
+.bdg span { font-size: 12px; font-weight: 800; line-height: 1.3; min-height: 32px; }
+.bdg.locked { background: var(--panel-deep); border: 2px dashed var(--line-soft); box-shadow: none; }
+.bdg.locked .m { background: var(--panel); color: #8a93cc; box-shadow: inset 0 4px 8px rgba(0,0,0,0.6); }
+.bdg.locked span { color: #a9b1e0; }
+
+
+/* Punch card */
+.punch { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px 8px; }
+.pc { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.pc i { display: flex; align-items: center; justify-content: center; width: 100%; max-width: 40px; aspect-ratio: 1; border-radius: 50%; box-sizing: border-box; background: var(--panel-deep); border: 2px solid var(--line-soft); box-shadow: inset 0 4px 8px rgba(0,0,0,0.65); }
+.pc i.on { background: radial-gradient(circle at 34% 28%, #e0feff 0%, var(--cyan) 42%, #0b6b86 100%); border: 0; box-shadow: 0 3px 0 #064556, 0 0 10px rgba(34,211,238,0.6); }
+.pc i.tipspot { outline: 3px solid var(--pink); outline-offset: 2px; }
+.pc i svg { width: 18px; height: 18px; }
+.pc span { font-size: 11px; font-weight: 800; color: var(--pink-label); height: 13px; }
+.stepcard b { font-size: 19px; }
+.stepcard p { font-size: 15px; }
+
+/* Tied belt */
+.tied { width: 100%; max-width: 340px; margin: 0 auto; }
+.bwrap { width: 100%; overflow: hidden; filter: drop-shadow(0 0 18px rgba(242,207,46,0.2)); }
+.bstack { position: relative; width: 134.45%; margin: -6.3% 0 -0.84% -19.33%; aspect-ratio: 640 / 308; }
+.bstack img { position: absolute; inset: 0; width: 100%; height: 100%; max-width: none; }
+.bstack img.ghost { opacity: 0.32; }
+.tkey { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 10px; border-radius: 18px; background: var(--panel); border: 2px solid var(--line); box-shadow: 0 6px 0 #060920; padding: 14px 12px; }
+.tcol { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.th { font-family: var(--display); font-size: 17px; }
+.trow { display: flex; align-items: center; gap: 9px; }
+.tc { width: 32px; height: 32px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; box-sizing: border-box; border: 3px solid rgba(255,255,255,0.18); }
+.tc svg { width: 18px; height: 18px; }
+.tc.bk { background: radial-gradient(circle at 34% 28%, #4a4a4a 0%, #111 55%, #000 100%); border-color: #6b7099; }
+.tc.sv { background: radial-gradient(circle at 34% 28%, #ffffff 0%, #d9dce2 45%, #8d9199 100%); }
+.tc.or { background: radial-gradient(circle at 34% 28%, #ffc08a 0%, #ff7a1a 50%, #b8500a 100%); }
+.tc.bl { background: radial-gradient(circle at 34% 28%, #9cc2ff 0%, #2f6fd6 50%, #163f8a 100%); }
+.tc.gd { background: radial-gradient(circle at 34% 28%, #fff7c2 0%, #ffe46b 45%, #b8901a 100%); }
+.tc.got { border-color: var(--mint); box-shadow: 0 0 10px rgba(94,234,212,0.8); }
+.tt { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+.tt b { font-size: 14px; font-weight: 800; }
+.tt em { font-style: normal; font-size: 12.5px; font-weight: 600; color: var(--pink-soft); }
+.tt em.g { color: var(--mint); font-weight: 800; }
+@media (prefers-reduced-motion: no-preference) { .bstack img.pulse { animation: pulse 1.6s ease-in-out infinite; } @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } } }
+
+.tlabels { display: flex; justify-content: center; gap: 22%; margin-top: 2px; font-size: 15px; font-weight: 800; color: var(--muted); }
+.tlabels span { width: 24%; text-align: center; }
+
+/* Award moment */
+.award { position: absolute; inset: 0; z-index: 5; overflow: hidden; display: flex; flex-direction: column; align-items: center; gap: 22px; text-align: center; padding: 64px 26px calc(28px + env(safe-area-inset-bottom, 0px)); background: radial-gradient(circle at 50% 30%, #3a1660 0%, #1a1446 38%, var(--bg) 72%); }
+.award .bits { position: absolute; inset: 0; pointer-events: none; }
+.award .bits i { position: absolute; display: block; border-radius: 3px; opacity: 0.9; }
+.award .big { position: relative; font-family: var(--display); font-size: 44px; line-height: 1.05; text-shadow: 0 0 24px rgba(255,62,165,0.9), 0 4px 0 #8a1659; }
+.award .yay { position: relative; font-family: var(--display); font-size: 30px; color: var(--pink-label); text-shadow: 0 0 16px rgba(255,62,165,0.7); }
+.award .beltwrap { position: relative; width: 100%; max-width: 300px; display: flex; flex-direction: column; gap: 10px; }
+.award .belt { height: 80px; padding: 0 18px; border-radius: 12px; }
+.award .newtip { width: 28px; height: 62px; border-radius: 6px; box-shadow: 0 3px 0 rgba(0,0,0,0.55), 0 0 0 4px var(--pink), 0 0 28px rgba(255,62,165,1); }
+.award .lbl { align-self: center; font-size: 15px; font-weight: 800; color: var(--pink-label); }
+.award .card, .award .say, .award .fam, .award .btnrow { position: relative; width: 100%; box-sizing: border-box; }
+.award .say { font-size: 18px; font-weight: 700; color: var(--soft); }
+.award .fam { margin-top: auto; font-size: 15px; font-weight: 600; color: var(--muted); }
+@media (prefers-reduced-motion: no-preference) {
+  .award:not([hidden]) .beltwrap { animation: pop 600ms cubic-bezier(.2,1.6,.4,1) both; }
+  .award:not([hidden]) .bits i { animation: fall 2.4s ease-out both; }
+  @keyframes pop { from { transform: scale(0.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  @keyframes fall { from { transform: translateY(-60px) rotate(0deg); opacity: 0; } 20% { opacity: 1; } to { transform: translateY(0) rotate(var(--r)); opacity: 0.9; } }
+}
+@media (max-width: 440px) {
+  .stage { padding-block: 8px; gap: 8px; }
+  .phone { height: calc(100dvh - 60px); border-radius: 26px; }
+}
+</style>
+
+<div class="stage">
+  <div class="phone" id="phone">
+    <div class="scroll" id="scroll">
+
+      <!-- HOME -->
+      <section class="screen" data-view="home" aria-label="Home">
+        <div class="stack4">
+          <div class="name">Hi Alex!</div>
+          <div style="font-size:20px;font-weight:800;color:var(--gold)">You have a yellow belt</div>
+        </div>
+        <div class="tied" id="homeBelt" role="img" aria-label="Yellow belt with 1 black tip"></div>
+
+        <div class="card pink" style="display:flex;flex-direction:column;gap:16px;padding:18px 16px">
+          <div class="eyebrow" style="color:var(--pink-label);text-align:center">My class card</div>
+          <div class="punch" id="punch" aria-label="11 of 24 circles filled"></div>
+          <div style="text-align:center;display:flex;flex-direction:column;gap:4px">
+            <div style="font-family:var(--display);font-size:30px;line-height:1.1">5 more classes</div>
+            <div style="font-size:18px;font-weight:700;color:var(--pink-soft)">to get your next black tip!</div>
+          </div>
+        </div>
+
+        <div class="h2" style="font-size:24px;margin-top:4px">How to get your orange belt</div>
+
+        <div class="road">
+          <div class="step">
+            <div class="rail"><div class="dot now">1</div><div class="line"></div></div>
+            <div class="stepcard now">
+              <span class="pill" style="background:var(--pink);color:#fff;align-self:flex-start">You are here</span>
+              <div class="stack4"><b>Come to 24 classes</b><p>You did 11. Keep going!</p></div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="rail"><div class="dot">2</div><div class="line"></div></div>
+            <div class="stepcard">
+              <div class="stack4"><b>Show your coach your moves</b><p>You get a tip for each one.</p></div>
+              <div class="chips" style="flex-direction:column;gap:8px">
+                <div class="chip"><i class="stripe" style="background:var(--orange)"></i>Orange tip: martial arts moves</div>
+                <div class="chip"><i class="stripe" style="background:var(--blue)"></i>Blue tip: athletic moves</div>
+              </div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="rail"><div class="dot">3</div><div class="line"></div></div>
+            <div class="stepcard" style="flex-direction:row;align-items:center;gap:12px">
+              <i class="stripe" style="background:#d4a72c;height:30px;box-shadow:0 0 10px rgba(212,167,44,0.6)"></i>
+              <div class="stack4"><b>Pass your test</b><p>You get a gold tip. Ready for your next belt!</p></div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="rail"><div class="dot goal">4</div></div>
+            <div class="stepcard goal">
+              <div class="sw" style="width:70px;height:26px;background:linear-gradient(180deg,#ffc08a 0%,#e8862a 50%,#a8560f 100%);box-shadow:0 4px 0 #6b3308"></div>
+              <div class="stack4"><div style="font-family:var(--display);font-size:22px;color:var(--orange-ink)">Get your orange belt!</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="display:flex;align-items:center;gap:14px">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#ff3ea5" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3c1 3.5 5 5.5 5 10a5 5 0 0 1-10 0c0-2.2 1.2-3.6 2.5-4.6.2 1.6 1 2.6 2 2.6-.6-2.7.5-5.4.5-8z"/></svg>
+          <div class="stack4"><div style="font-size:19px;font-weight:800">6 weeks in a row!</div><div class="sub" style="font-size:15px;line-height:1.35">Come 1 more time this week.</div></div>
+        </div>
+
+        <div class="btnrow">
+          <button type="button" class="btn primary" data-go="wins">My wins</button>
+          <button type="button" class="btn" data-go="belts">All my belts</button>
+        </div>
+      </section>
+
+      <!-- BELTS -->
+      <section class="screen" data-view="belts" aria-label="All my belts" hidden>
+        <div class="stack4" style="gap:6px">
+          <div class="h1">White to black</div>
+          <div class="sub">Every belt works the same way: come to class to open testing, then pass the test.</div>
+        </div>
+        <div class="card" style="display:flex;flex-direction:column;gap:10px;box-shadow:0 10px 0 #060920,0 0 34px rgba(34,211,238,0.22)">
+          <div style="display:flex;align-items:baseline;gap:10px"><div style="font-family:var(--display);font-size:30px;line-height:1">31</div><div class="sub" style="font-weight:600">of 350 classes to black belt</div></div>
+          <div class="bar" style="height:12px"><i style="width:9%"></i></div>
+        </div>
+        <div id="beltStages" class="group" style="gap:18px"></div>
+      </section>
+
+      <!-- ALERTS -->
+      <section class="screen" data-view="alerts" aria-label="Alerts" hidden>
+        <div class="stack4" style="gap:6px">
+          <div class="h1">Alerts</div>
+          <div class="sub">Each of these also comes to your phone as a notification.</div>
+        </div>
+        <div class="group">
+          <div class="h2" style="font-size:20px">Coming up</div>
+          <div class="rowcard pink"><div class="ic">5</div><div class="txt"><div class="t">Black tip 2 in 5 classes</div><div class="d">Your next booked class is Thu 5:30 PM.</div></div><div class="meta">Today<i class="unread"></i></div></div>
+          <div class="rowcard cyan"><div class="ic">13</div><div class="txt"><div class="t">Testing in 13 classes</div><div class="d">Start practicing: shuttle run, side shuffle, jab and cross, roundhouse kick.</div></div><div class="meta">Today<i class="unread"></i></div></div>
+          <div class="rowcard orange"><div class="ic">1</div><div class="txt"><div class="t">1 class keeps your streak</div><div class="d">Come once more this week to make it 7 weeks in a row.</div></div><div class="meta">Wed</div></div>
+        </div>
+        <div class="group">
+          <div class="h2" style="font-size:20px">Pats on the back</div>
+          <div class="rowcard"><div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ff3ea5" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3c1 3.5 5 5.5 5 10a5 5 0 0 1-10 0c0-2.2 1.2-3.6 2.5-4.6.2 1.6 1 2.6 2 2.6-.6-2.7.5-5.4.5-8z"/></svg></div><div class="txt"><div class="t">6 weeks in a row</div><div class="d">You trained 2 or more times every week for 6 weeks.</div></div><div class="meta">Sun</div></div>
+          <div class="rowcard"><div class="ic"><i style="width:24px;height:24px;border-radius:50%;background:radial-gradient(circle at 34% 28%,#e0feff 0%,#22d3ee 42%,#0b6b86 100%);box-shadow:0 0 8px rgba(34,211,238,0.8)"></i></div><div class="txt"><div class="t">30 classes total</div><div class="d">Thirty classes on your Journey. Strong start.</div></div><div class="meta">Oct 31</div></div>
+          <button type="button" class="rowcard tap" data-award><div class="ic"><i style="width:10px;height:26px;border-radius:3px;background:linear-gradient(90deg,rgba(255,255,255,0.45),rgba(255,255,255,0) 45%,rgba(0,0,0,0.35)),#1a1a1a;border:1px solid rgba(255,255,255,0.7)"></i></div><div class="txt"><div class="t">Black tip 1 earned</div><div class="d">8 classes on your yellow belt. Coach put it on at the end of class.</div><div class="go">Watch it again</div></div><div class="meta">Oct 27</div></button>
+          <div class="rowcard"><div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="#ffe46b" stroke="#b8901a" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg></div><div class="txt"><div class="t">Perfect week</div><div class="d">Three classes in one week.</div></div><div class="meta">Oct 26</div></div>
+        </div>
+        <div class="group">
+          <div class="h2" style="font-size:20px">Earlier</div>
+          <div class="rowcard"><div class="ic"><i style="width:30px;height:12px;border-radius:3px;background:linear-gradient(180deg,#fff08a 0%,#f2cf2e 50%,#c9a11a 100%);box-shadow:0 2px 0 #8f720c"></i></div><div class="txt"><div class="t">Yellow belt presented</div><div class="d">You passed testing and earned your yellow belt.</div></div><div class="meta">Oct 14</div></div>
+        </div>
+      </section>
+
+      <!-- WINS -->
+      <section class="screen" data-view="wins" aria-label="My wins" hidden>
+        <div class="h1">Alex's wins</div>
+        <div class="card pink" style="display:flex;flex-direction:column;gap:14px;padding:18px 16px">
+          <div style="display:flex;align-items:center;gap:14px">
+            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#ff9fd2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3c1 3.5 5 5.5 5 10a5 5 0 0 1-10 0c0-2.2 1.2-3.6 2.5-4.6.2 1.6 1 2.6 2 2.6-.6-2.7.5-5.4.5-8z"/></svg>
+            <div class="stack4"><div style="font-family:var(--display);font-size:34px;line-height:1">6 weeks</div><div style="font-size:14px;font-weight:600;color:var(--pink-soft)">in a row with 2 or more classes</div></div>
+          </div>
+          <div class="weeks" aria-label="Last 8 weeks: 6 full weeks, this week in progress">
+            <div class="wk"><i></i>&nbsp;</div><div class="wk"><i class="on"></i>&nbsp;</div><div class="wk"><i class="on"></i>&nbsp;</div><div class="wk"><i class="on"></i>&nbsp;</div><div class="wk"><i class="on"></i>&nbsp;</div><div class="wk"><i class="on"></i>&nbsp;</div><div class="wk"><i class="on"></i>&nbsp;</div><div class="wk"><i class="part"></i>Now</div>
+          </div>
+          <div style="font-size:13px;font-weight:700">This week: 1 of 2 classes. One more makes it 7 weeks.</div>
+        </div>
+
+        <div class="h2">Hurdles cleared</div>
+        <div class="card" style="padding:6px 16px;box-shadow:0 10px 0 #060920,0 0 34px rgba(34,211,238,0.22)">
+          <div class="hurdle"><div class="slot"><i class="mini-tip" style="background:#1a1a1a"></i></div><div class="n">Black tip 1</div><div class="w">Oct 27</div></div>
+          <div class="hurdle"><div class="slot"><i class="mini-belt" style="background:linear-gradient(180deg,#fff08a,#c9a11a)"></i></div><div class="n">Yellow belt</div><div class="w">Oct 14</div></div>
+          <div class="hurdle"><div class="slot"><i class="mini-tip" style="background:#d4a72c"></i></div><div class="n">Gold tip, passed the test</div><div class="w">Oct 9</div></div>
+          <div class="hurdle"><div class="slot"><i class="mini-tip" style="background:#e8862a"></i></div><div class="n">Orange tip, martial arts</div><div class="w">Oct 6</div></div>
+          <div class="hurdle"><div class="slot"><i class="mini-tip" style="background:#2f6fd6"></i></div><div class="n">Blue tip, athletic</div><div class="w">Sep 29</div></div>
+          <div class="hurdle"><div class="slot"><i class="mini-tip" style="background:linear-gradient(180deg,#f2f2f2,#a9adb5)"></i></div><div class="n">Silver tip, testing opened</div><div class="w">Sep 22</div></div>
+          <div class="hurdle"><div class="slot"><i class="mini-belt" style="background:linear-gradient(180deg,#ffffff,#bdbab0)"></i></div><div class="n">White belt</div><div class="w">Aug 2</div></div>
+        </div>
+
+        <div style="display:flex;align-items:baseline;justify-content:space-between"><div class="h2">Badges</div><div class="sub" style="font-size:13px;font-weight:700">5 of 12 earned</div></div>
+        <div class="badges" id="badges"></div>
+      </section>
+
+    </div>
+
+    <nav class="tabs" aria-label="App sections">
+      <button type="button" class="tab" data-go="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>Home</button>
+      <button type="button" class="tab" data-go="belts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="4" rx="1"/><rect x="3" y="11" width="18" height="4" rx="1"/><rect x="3" y="17" width="18" height="3" rx="1"/></svg>Belts</button>
+      <button type="button" class="tab" data-go="alerts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>Alerts<span class="badge" id="alertBadge">2</span></button>
+      <button type="button" class="tab" data-go="wins"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg>Wins</button>
+    </nav>
+
+    <!-- AWARD MOMENT -->
+    <section class="award" id="award" aria-label="New tip" hidden>
+      <div class="bits" id="bits"></div>
+      <div class="yay">You did it, Alex!</div>
+      <div class="beltwrap">
+        <div class="tied" id="awardBelt" role="img" aria-label="Yellow belt with the new black tip glowing"></div>
+        <div class="lbl">Look! Your new tip is glowing.</div>
+      </div>
+      <div class="stack4" style="position:relative;gap:8px">
+        <div class="big">Black tip 1</div>
+        <div class="say">You came to 8 classes. It goes on your yellow belt.</div>
+      </div>
+      <div class="card cyan" style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:18px 16px">
+        <div class="eyebrow" style="font-size:14px;color:var(--cyan-soft)">Next prize: Black tip 2</div>
+        <div class="rings" style="gap:6px;flex-wrap:nowrap" aria-hidden="true"><i class="ring sm"></i><i class="ring sm"></i><i class="ring sm"></i><i class="ring sm"></i><i class="ring sm"></i><i class="ring sm"></i><i class="ring sm"></i><i class="ring sm"></i></div>
+        <div style="font-size:18px;font-weight:800">Come to 8 more classes</div>
+      </div>
+      <div class="fam">Your family got this news too.</div>
+      <div class="btnrow">
+        <button type="button" class="btn" id="shareBtn">Share</button>
+        <button type="button" class="btn hot" id="doneBtn">Done</button>
+      </div>
+    </section>
+  </div>
+  <div class="hint" id="hint">Tap the tabs to move around. Open Alerts and tap "Black tip 1 earned" to see the award moment.</div>
+</div>
+
+<script>window.BELT_IMG={"base": "belt/belt_base.webp", "tip1": "belt/tip1.webp", "tip1_ring": "belt/tip1_ring.webp", "tip2": "belt/tip2.webp", "tip2_ring": "belt/tip2_ring.webp", "tip3": "belt/tip3.webp", "tip3_ring": "belt/tip3_ring.webp", "silver": "belt/silver.webp", "silver_ring": "belt/silver_ring.webp", "gold": "belt/gold.webp", "gold_ring": "belt/gold_ring.webp", "orange": "belt/orange.webp", "orange_ring": "belt/orange_ring.webp", "blue": "belt/blue.webp", "blue_ring": "belt/blue_ring.webp", "tip1_glow": "belt/tip1_glow.webp"};</script>
+<script>
+(function () {
+  var views = ['home', 'belts', 'alerts', 'wins'];
+  var scroller = document.getElementById('scroll');
+  var award = document.getElementById('award');
+
+  function show(view) {
+    if (view === 'award') { openAward(); return; }
+    if (views.indexOf(view) < 0) view = 'home';
+    award.hidden = true;
+    document.querySelectorAll('[data-view]').forEach(function (s) { s.hidden = s.getAttribute('data-view') !== view; });
+    document.querySelectorAll('.tab').forEach(function (t) {
+      if (t.getAttribute('data-go') === view) t.setAttribute('aria-current', 'page'); else t.removeAttribute('aria-current');
+    });
+    if (view === 'alerts') {
+      setTimeout(function () {
+        document.querySelectorAll('.unread').forEach(function (u) { u.remove(); });
+        var b = document.getElementById('alertBadge'); if (b) b.hidden = true;
+      }, 1200);
+    }
+    scroller.scrollTop = 0;
+  }
+  function go(view) {
+    if (location.hash.slice(1) === view) show(view); else location.hash = view;
+  }
+  function openAward() {
+    var bits = document.getElementById('bits');
+    bits.innerHTML = '';
+    var spots = [[6,4,'#22d3ee',10],[90,5,'#ff3ea5',12],[25,3,'#ffe46b',7],[70,3,'#5eead4',8],[8,22,'#ffe46b',8],[88,20,'#22d3ee',9],[14,36,'#5eead4',7],[82,37,'#ff3ea5',8],[46,2,'#ff3ea5',6],[26,14,'#5eead4',6],[72,13,'#ffe46b',6],[4,50,'#ffe46b',7]];
+    spots.forEach(function (p, i) {
+      var el = document.createElement('i');
+      var round = i % 3 === 0;
+      el.style.left = p[0] + '%'; el.style.top = p[1] + '%';
+      el.style.width = p[3] + 'px'; el.style.height = (round ? p[3] : p[3] * 2) + 'px';
+      el.style.borderRadius = round ? '50%' : '3px';
+      el.style.background = p[2]; el.style.boxShadow = '0 0 10px ' + p[2];
+      el.style.setProperty('--r', (i * 37) + 'deg'); el.style.transform = 'rotate(' + (i * 37) + 'deg)';
+      el.style.animationDelay = (i * 60) + 'ms';
+      bits.appendChild(el);
+    });
+    award.hidden = false;
+  }
+
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest('[data-go]');
+    if (t) { go(t.getAttribute('data-go')); return; }
+    if (e.target.closest('[data-award]')) { go('award'); }
+  });
+  document.getElementById('doneBtn').addEventListener('click', function () { go('home'); });
+  document.getElementById('shareBtn').addEventListener('click', function (e) {
+    var b = e.currentTarget; b.textContent = 'Sharing is in the real app'; setTimeout(function () { b.textContent = 'Share'; }, 1800);
+  });
+
+  // Punch card
+  var ph = '';
+  for (var k = 1; k <= 24; k++) {
+    var on = k <= 11, tipAt = (k === 8 || k === 16 || k === 24);
+    ph += '<div class="pc"><i class="' + (on ? 'on' : '') + (tipAt ? ' tipspot' : '') + '">' + (on ? '<svg viewBox="0 0 24 24" fill="none" stroke="#04323f" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>' : '') + '</i><span>' + (tipAt ? 'Tip' : '') + '</span></div>';
+  }
+  document.getElementById('punch').innerHTML = ph;
+
+  // Belts map
+  function belt(top, mid, bot, dark, edge) { return 'background:linear-gradient(180deg,' + top + ' 0%,' + mid + ' 50%,' + bot + ' 100%);box-shadow:0 4px 0 ' + dark + (edge ? ';border:2px solid #ffe46b' : ''); }
+  var stages = [
+    { name: 'Ignite', c: '#22d3ee', belts: [
+      ['White belt', belt('#ffffff', '#ecebe4', '#bdbab0', '#6f6d66'), 'done', 'Earned Aug 2'],
+      ['Yellow belt', belt('#fff08a', '#f2cf2e', '#c9a11a', '#8f720c'), 'here', 'Earned Oct 14'],
+      ['Orange belt', belt('#ffc08a', '#e8862a', '#a8560f', '#6b3308'), 'next', '11 of 24 classes + Ignite test']] },
+    { name: 'Impact', c: '#ff3ea5', belts: [
+      ['Green belt', belt('#8fd88c', '#3f9a3c', '#24621f', '#173f14'), '', '30 classes + Ignite test'],
+      ['Purple belt', belt('#c49be8', '#7b3fb0', '#4c1f74', '#2f114a'), '', '36 classes + Impact test', 'New test'],
+      ['Blue belt', belt('#8fb6f2', '#2f6fd6', '#183f8a', '#0e275a'), '', '36 classes + Impact test'],
+      ['Brown belt', belt('#c08a5c', '#7a4a24', '#4a2a10', '#2c1806'), '', '45 classes + Impact test']] },
+    { name: 'Legacy Warrior', c: '#ffe46b', belts: [
+      ['Gray belt', belt('#d6d6d6', '#8c8c8c', '#5a5a5a', '#333333'), '', '45 classes + Impact test'],
+      ['Red belt', belt('#f08a8a', '#c62828', '#7e1414', '#4c0a0a'), '', '54 classes + Impact test'],
+      ['Black belt', belt('#4a4a4a', '#1a1a1a', '#000000', '#000000', true), '', '60 classes + black belt test']] }
+  ];
+  var pills = { done: ['Earned', '#5eead4', '#04323f'], here: ['You are here', '#ff3ea5', '#ffffff'], next: ['Next', '#22d3ee', '#04323f'] };
+  var html = '';
+  stages.forEach(function (st) {
+    html += '<div class="group"><div class="stagehead"><i class="stagedot" style="background:' + st.c + ';box-shadow:0 0 12px ' + st.c + '"></i><div class="h2">' + st.name + '</div></div>';
+    st.belts.forEach(function (b) {
+      var p = pills[b[2]] || (b[4] ? [b[4], '#3a2a6a', '#e3dcff'] : null);
+      html += '<div class="beltrow ' + b[2] + '"><div class="top"><div class="sw" style="' + b[1] + '"></div><div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px"><div class="n">' + b[0] + '</div><div class="s">' + b[3] + '</div></div>' +
+        (p ? '<div class="pill" style="background:' + p[1] + ';color:' + p[2] + '">' + p[0] + '</div>' : '') + '</div>' +
+        (b[2] === 'next' ? '<div class="bar" style="height:10px"><i style="width:46%"></i></div>' : '') + '</div>';
+    });
+    html += '</div>';
+  });
+  document.getElementById('beltStages').innerHTML = html;
+
+  // Badges
+  var icons = {
+    flame: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3c1 3.5 5 5.5 5 10a5 5 0 0 1-10 0c0-2.2 1.2-3.6 2.5-4.6.2 1.6 1 2.6 2 2.6-.6-2.7.5-5.4.5-8z"/></svg>',
+    star: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg>',
+    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>',
+    back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>',
+    belts: '<span style="display:flex;flex-direction:column;gap:3px"><i style="display:block;width:30px;height:9px;border-radius:2px;background:currentColor"></i><i style="display:block;width:30px;height:9px;border-radius:2px;background:currentColor;opacity:.6"></i></span>'
+  };
+  var badges = [['1', 'First class', 1], ['10', '10 classes', 1], ['25', '25 classes', 1], ['star', 'Perfect week', 1], ['flame', '4 week streak', 1], ['50', '50 classes', 0],
+    ['flame', '12 week streak', 0], ['star', 'Perfect month', 0], ['100', '100 classes', 0], ['check', 'Passed on first try', 0], ['belts', 'Two belts in a year', 0], ['back', 'Comeback', 0]];
+  document.getElementById('badges').innerHTML = badges.map(function (b) {
+    return '<div class="bdg' + (b[2] ? '' : ' locked') + '"><div class="m">' + (icons[b[0]] || b[0]) + '</div><span>' + b[1] + '</span></div>';
+  }).join('');
+
+  // Tied belt picture. Left tail = classes (black tips, silver tip). Right tail = skills (orange, blue, gold tips).
+  // Earned pieces show solid. Pieces not earned yet show as a bright outline in their own color.
+  var CHECK_W = '<svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>';
+  var CHECK_D = CHECK_W.replace('#ffffff', '#1b1400');
+  function tiedBelt(id, o) {
+    var I = window.BELT_IMG || {};
+    var on = { tip1: o.tips >= 1, tip2: o.tips >= 2, tip3: o.tips >= 3, silver: !!o.silver, gold: !!o.gold, orange: !!o.orange, blue: !!o.blue };
+    var html = '<div class="bwrap"><div class="bstack"><img src="' + I.base + '" alt="">';
+    ['silver', 'tip3', 'tip2', 'tip1', 'gold', 'orange', 'blue'].forEach(function (n) {
+      html += on[n] ? '<img src="' + I[n] + '" alt="">' : '<img src="' + I[n] + '" alt="" class="ghost"><img src="' + I[n + '_ring'] + '" alt="">';
+      if (o.glow === n) html += '<img src="' + I[n + '_glow'] + '" alt="" class="pulse">';
+    });
+    html += '</div></div>';
+    if (o.legend) {
+      var left = [
+        ['tip1', 'Black tip 1', 'bk', o.notes.tip1], ['tip2', 'Black tip 2', 'bk', o.notes.tip2],
+        ['tip3', 'Black tip 3', 'bk', o.notes.tip3], ['silver', 'Silver tip', 'sv', o.notes.silver]];
+      var right = [
+        ['orange', 'Orange tip', 'or', 'Martial arts moves'], ['blue', 'Blue tip', 'bl', 'Athletic moves'],
+        ['gold', 'Gold tip', 'gd', 'Passed! Ready for next belt']];
+      var row = function (r) {
+        var got = on[r[0]];
+        var dark = r[2] === 'sv' || r[2] === 'gd';
+        return '<div class="trow"><span class="tc ' + r[2] + (got ? ' got' : '') + '">' + (got ? (dark ? CHECK_D : CHECK_W) : '') + '</span>' +
+          '<span class="tt"><b>' + r[1] + '</b><em' + (got ? ' class="g"' : '') + '>' + (got ? 'Got it!' : r[3]) + '</em></span></div>';
+      };
+      html += '<div class="tkey"><div class="tcol"><div class="th" style="color:var(--cyan)">Classes</div>' + left.map(row).join('') + '</div>' +
+        '<div class="tcol"><div class="th" style="color:var(--pink-label)">Skills</div>' + right.map(row).join('') + '</div></div>';
+    } else {
+      html += '<div class="tlabels"><span>Classes</span><span>Skills</span></div>';
+    }
+    document.getElementById(id).innerHTML = html;
+  }
+  tiedBelt('homeBelt', { tips: 1, legend: true, notes: { tip1: '', tip2: '5 more classes', tip3: '13 more classes', silver: 'Ready for testing' } });
+  tiedBelt('awardBelt', { tips: 1, glow: 'tip1' });
+
+  window.addEventListener('hashchange', function () { show(location.hash.slice(1)); });
+  show(location.hash.slice(1) || 'home');
+})();
+</script>
+
+</html>
